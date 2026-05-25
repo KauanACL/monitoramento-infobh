@@ -1,8 +1,6 @@
 package main
 
-import (
-	"monitoramento-infobh/internal/server"
-)
+import "monitoramento-infobh/internal/server"
 
 func main() {
 	server.RunCommand()

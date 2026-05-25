@@ -3,8 +3,8 @@ services:
     name: monitoramento-infobh
     runtime: go
     plan: starter
-    buildCommand: go build -o bin/monitor-server ./cmd/server
-    startCommand: ./bin/monitor-server
+    buildCommand: go build -tags netgo -ldflags '-s -w' -o app
+    startCommand: ./app
     healthCheckPath: /healthz
     disk:
       name: monitoramento-data
