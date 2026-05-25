@@ -139,6 +139,12 @@ Depois do deploy, use a URL `https://SEU-SERVICO.onrender.com` no agente:
 .\infobh-agent.exe install -server https://SEU-SERVICO.onrender.com -token TOKEN_GERADO
 ```
 
+O deploy no Render também gera o agente Windows 64-bit para download em:
+
+```text
+https://SEU-SERVICO.onrender.com/static/downloads/infobh-agent-windows-amd64.exe
+```
+
 Observações:
 
 - Sem Persistent Disk, o SQLite perde dados em restart/deploy.

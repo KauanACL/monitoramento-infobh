@@ -3,7 +3,7 @@ services:
     name: monitoramento-infobh
     runtime: go
     plan: starter
-    buildCommand: go build -tags netgo -ldflags '-s -w' -o app
+    buildCommand: mkdir -p internal/server/web/static/downloads && GOOS=windows GOARCH=amd64 go build -o internal/server/web/static/downloads/infobh-agent-windows-amd64.exe ./cmd/agent && GOOS=windows GOARCH=386 go build -o internal/server/web/static/downloads/infobh-agent-windows-386.exe ./cmd/agent && go build -tags netgo -ldflags '-s -w' -o app
     startCommand: ./app
     healthCheckPath: /healthz
     disk:
