@@ -1,0 +1,110 @@
+{{define "content"}}
+<header class="page-head">
+  <div>
+    <h1>{{.Name}}</h1>
+    <p>{{.Client.Name}} · {{if .Hostname}}{{.Hostname}}{{else}}aguardando primeiro heartbeat{{end}}</p>
+  </div>
+  <div class="head-actions">
+    <form method="post" action="/machines/{{.ID}}/rotate-token">
+      <button class="button button-secondary" type="submit">Renovar token</button>
+    </form>
+  </div>
+</header>
+
+<section class="metrics-grid detail">
+  <article class="metric-tile {{if .Online}}good{{else}}danger{{end}}">
+    <span>Status</span>
+    <strong>{{statusText .Online}}</strong>
+  </article>
+  <article class="metric-tile">
+    <span>CPU</span>
+    <strong>{{if .LastMetric}}{{pct .LastMetric.CPUPercent}}{{else}}-{{end}}</strong>
+  </article>
+  <article class="metric-tile">
+    <span>RAM</span>
+    <strong>{{if .LastMetric}}{{pct .LastMetric.RAMPercent}}{{else}}-{{end}}</strong>
+  </article>
+  <article class="metric-tile {{if .InternetOnline}}good{{else}}warn{{end}}">
+    <span>Internet</span>
+    <strong>{{if .InternetOnline}}OK{{else}}Falha{{end}}</strong>
+  </article>
+  <article class="metric-tile">
+    <span>Último sinal</span>
+    <strong>{{timeAgo .LastSeenAt}}</strong>
+  </article>
+</section>
+
+<section class="detail-grid">
+  <article class="chart-panel">
+    <div class="section-title">
+      <h2>Histórico</h2>
+      <span>últimas 60 coletas</span>
+    </div>
+    <canvas class="sparkline" height="160" data-label="CPU" data-values="{{historyCPU .History}}"></canvas>
+    <canvas class="sparkline ram" height="160" data-label="RAM" data-values="{{historyRAM .History}}"></canvas>
+  </article>
+
+  <article class="chart-panel">
+    <div class="section-title">
+      <h2>Armazenamento</h2>
+    </div>
+    {{if .Disks}}
+    <div class="disk-list">
+      {{range .Disks}}
+      <div class="disk-row">
+        <div>
+          <strong>{{.Name}}</strong>
+          <small>{{.MountPoint}} · {{.FileSystem}} · {{bytes .UsedBytes}} usados de {{bytes .TotalBytes}} · {{bytes .FreeBytes}} livres</small>
+        </div>
+        <span>{{pct .UsedPercent}}</span>
+        <div class="bar"><i style="width: {{pct .UsedPercent}}"></i></div>
+      </div>
+      {{end}}
+    </div>
+    {{else}}
+    <div class="empty-line">Sem dados de disco.</div>
+    {{end}}
+  </article>
+</section>
+
+<section class="section-band">
+  <div class="section-title">
+    <h2>Dispositivos</h2>
+    <span>USB, impressoras e armazenamento</span>
+  </div>
+  {{if .Devices}}
+  <div class="device-grid">
+    {{range .Devices}}
+    <article class="device-card {{if not .Connected}}muted{{end}}">
+      <span class="device-icon {{categoryIcon .Category}}"></span>
+      <div>
+        <strong>{{.Name}}</strong>
+        <small>{{.Category}} · {{if .Connected}}conectado{{else}}desconectado{{end}} · {{.Status}} · visto {{clock .LastSeen}}</small>
+      </div>
+    </article>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="empty-line">Nenhum dispositivo registrado.</div>
+  {{end}}
+</section>
+
+<section class="section-band">
+  <div class="section-title">
+    <h2>Eventos</h2>
+  </div>
+  {{if .Events}}
+  <div class="event-list">
+    {{range .Events}}
+    <div class="event-row">
+      <span class="event-dot {{.Severity}}"></span>
+      <strong>{{.Message}}</strong>
+      <small>{{clock .CreatedAt}}</small>
+    </div>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="empty-line">Sem eventos recentes.</div>
+  {{end}}
+</section>
+{{end}}

@@ -1,0 +1,19 @@
+[Unit]
+Description=Monitoramento InfoBH
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=monitoramento
+Group=monitoramento
+WorkingDirectory=/opt/monitoramento-infobh
+Environment=MONITOR_ADDR=:8080
+Environment=MONITOR_DB_PATH=/opt/monitoramento-infobh/data/monitoramento.db
+Environment=MONITOR_RETENTION_DAYS=30
+ExecStart=/opt/monitoramento-infobh/monitor-server
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: monitoramento-infobh
+    runtime: go
+    plan: starter
+    buildCommand: go build -o bin/monitor-server ./cmd/server
+    startCommand: ./bin/monitor-server
+    healthCheckPath: /healthz
+    disk:
+      name: monitoramento-data
+      mountPath: /data
+      sizeGB: 10
+    envVars:
+      - key: MONITOR_DB_PATH
+        value: /data/monitoramento.db
+      - key: MONITOR_RETENTION_DAYS
+        value: 30

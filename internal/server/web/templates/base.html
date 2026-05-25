@@ -1,0 +1,48 @@
+{{define "base"}}
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monitoramento InfoBH</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="/">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32"><path d="M6 18.4V9.2L16 4l10 5.2v9.2L16 28 6 18.4Z"/><path d="M10 17.2V11l6-3.1 6 3.1v6.2l-6 5.7-6-5.7Z"/></svg>
+        </span>
+        <span>
+          <strong>InfoBH</strong>
+          <small>Monitor</small>
+        </span>
+      </a>
+      <nav class="nav" aria-label="Principal">
+        <a href="/">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z"/></svg>
+          Dashboard
+        </a>
+        <a href="/clients">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm10.5-1A3.5 3.5 0 1 1 17.5 3a3.5 3.5 0 0 1 0 7ZM2 20c.4-4 2.4-6 5-6s4.6 2 5 6H2Zm11.2 0c-.2-1.8-.8-3.2-1.7-4.3 1-.8 2.2-1.2 3.5-1.2 2.5 0 4.5 1.9 4.9 5.5h-6.7Z"/></svg>
+          Clientes
+        </a>
+        <a href="/machines">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5C4 4.7 4.7 4 5.5 4h13c.8 0 1.5.7 1.5 1.5v9c0 .8-.7 1.5-1.5 1.5h-13c-.8 0-1.5-.7-1.5-1.5v-9ZM8 20v-2h8v2H8Z"/></svg>
+          Máquinas
+        </a>
+      </nav>
+      <div class="sidebar-note">
+        <span class="dot dot-open"></span>
+        Dashboard sem login
+      </div>
+    </aside>
+    <main class="main">
+      {{template "content" .}}
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
+{{end}}

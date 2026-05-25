@@ -1,0 +1,62 @@
+{{define "content"}}
+<header class="page-head">
+  <div>
+    <h1>Clientes</h1>
+    <p>Cadastre empresas e organize as máquinas monitoradas por contrato.</p>
+  </div>
+</header>
+
+{{if .Flash}}<div class="notice">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+
+<section class="split-layout">
+  <form class="form-panel" method="post" action="/clients">
+    <h2>Novo cliente</h2>
+    <label>
+      Nome
+      <input name="name" required maxlength="120" placeholder="Ex: Cliente Matriz">
+    </label>
+    <label>
+      Contato
+      <input name="contact" maxlength="160" placeholder="responsavel@email.com">
+    </label>
+    <label>
+      Observações
+      <textarea name="notes" rows="4" maxlength="500" placeholder="Contrato, cidade, observações de suporte"></textarea>
+    </label>
+    <button class="button" type="submit">Cadastrar cliente</button>
+  </form>
+
+  <div class="list-panel">
+    <div class="section-title">
+      <h2>Clientes cadastrados</h2>
+    </div>
+    {{if .Clients}}
+    <div class="table-wrap compact">
+      <table>
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            <th>Máquinas</th>
+            <th>Online</th>
+            <th>Alertas</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Clients}}
+          <tr>
+            <td data-label="Cliente"><a class="strong-link" href="/machines?client_id={{.ID}}">{{.Name}}</a><small>{{.Contact}}</small></td>
+            <td data-label="Máquinas">{{.TotalMachines}}</td>
+            <td data-label="Online">{{.OnlineMachines}}</td>
+            <td data-label="Alertas">{{if .AlertCount}}<span class="alert-text">{{.AlertCount}}</span>{{else}}<span class="ok-text">0</span>{{end}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <div class="empty-line">Nenhum cliente criado.</div>
+    {{end}}
+  </div>
+</section>
+{{end}}

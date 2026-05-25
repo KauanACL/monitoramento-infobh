@@ -1,0 +1,78 @@
+{{define "content"}}
+<header class="page-head">
+  <div>
+    <h1>Máquinas</h1>
+    <p>Crie tokens de instalação e acompanhe o estado dos agentes Windows.</p>
+  </div>
+</header>
+
+{{if .Flash}}<div class="notice">{{.Flash}}</div>{{end}}
+
+<section class="split-layout">
+  <form class="form-panel" method="post" action="/machines">
+    <h2>Nova máquina</h2>
+    <label>
+      Cliente
+      <select name="client_id" required>
+        <option value="">Selecione</option>
+        {{range .Clients}}
+        <option value="{{.ID}}" {{if eq $.SelectedClient .ID}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+    </label>
+    <label>
+      Nome da máquina
+      <input name="name" required maxlength="120" placeholder="Ex: Recepcao-01">
+    </label>
+    <button class="button" type="submit">Gerar token</button>
+  </form>
+
+  <div class="list-panel">
+    <div class="section-title">
+      <h2>Inventário</h2>
+      <form class="inline-filter" method="get" action="/machines">
+        <select name="client_id" onchange="this.form.submit()">
+          <option value="0">Todos os clientes</option>
+          {{range .Clients}}
+          <option value="{{.ID}}" {{if eq $.SelectedClient .ID}}selected{{end}}>{{.Name}}</option>
+          {{end}}
+        </select>
+      </form>
+    </div>
+    {{if .Machines}}
+    <div class="table-wrap compact">
+      <table>
+        <thead>
+          <tr>
+            <th>Máquina</th>
+            <th>Cliente</th>
+            <th>Status</th>
+            <th>CPU</th>
+            <th>RAM</th>
+            <th>Disco</th>
+            <th>Internet</th>
+            <th>Último sinal</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Machines}}
+          <tr>
+            <td data-label="Máquina"><a class="strong-link" href="/machines/{{.ID}}">{{.Name}}</a><small>{{.Hostname}}</small></td>
+            <td data-label="Cliente">{{.ClientName}}</td>
+            <td data-label="Status"><span class="status {{if .Online}}online{{else}}offline{{end}}">{{statusText .Online}}</span></td>
+            <td data-label="CPU">{{if .LastMetric}}{{pct .LastMetric.CPUPercent}}{{else}}-{{end}}</td>
+            <td data-label="RAM">{{if .LastMetric}}{{pct .LastMetric.RAMPercent}}{{else}}-{{end}}</td>
+            <td data-label="Disco">{{if .Disks}}{{with index .Disks 0}}{{pct .UsedPercent}} · {{bytes .UsedBytes}}{{end}}{{else}}-{{end}}</td>
+            <td data-label="Internet">{{if .LastMetric}}{{if .LastMetric.InternetOnline}}OK{{else}}Falha{{end}}{{else}}-{{end}}</td>
+            <td data-label="Último sinal">{{timeAgo .LastSeenAt}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <div class="empty-line">Nenhuma máquina encontrada.</div>
+    {{end}}
+  </div>
+</section>
+{{end}}

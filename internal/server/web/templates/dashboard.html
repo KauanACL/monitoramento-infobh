@@ -1,0 +1,101 @@
+{{define "content"}}
+<header class="page-head">
+  <div>
+    <h1>Operação de monitoramento</h1>
+    <p>Visão geral dos clientes, máquinas online/offline e recursos críticos.</p>
+  </div>
+  <div class="head-actions">
+    <a class="button button-secondary" href="/clients">Novo cliente</a>
+    <a class="button" href="/machines">Nova máquina</a>
+  </div>
+</header>
+
+<section class="metrics-grid" aria-label="Resumo">
+  <article class="metric-tile">
+    <span>Clientes</span>
+    <strong>{{.TotalClients}}</strong>
+  </article>
+  <article class="metric-tile">
+    <span>Máquinas</span>
+    <strong>{{.TotalMachines}}</strong>
+  </article>
+  <article class="metric-tile good">
+    <span>Online</span>
+    <strong>{{.OnlineMachines}}</strong>
+  </article>
+  <article class="metric-tile danger">
+    <span>Offline</span>
+    <strong>{{.OfflineMachines}}</strong>
+  </article>
+  <article class="metric-tile warn">
+    <span>Alertas</span>
+    <strong>{{.AlertCount}}</strong>
+  </article>
+</section>
+
+<section class="section-band">
+  <div class="section-title">
+    <h2>Clientes</h2>
+    <a href="/clients">Gerenciar</a>
+  </div>
+  {{if .Clients}}
+  <div class="client-grid">
+    {{range .Clients}}
+    <a class="client-card" href="/machines?client_id={{.ID}}">
+      <span class="client-name">{{.Name}}</span>
+      <span class="client-count">{{.OnlineMachines}}/{{.TotalMachines}} online</span>
+      <span class="status-rail"><i style="width: {{clientPercent .OnlineMachines .TotalMachines}}"></i></span>
+      {{if .AlertCount}}<span class="mini-alert">{{.AlertCount}} alerta(s)</span>{{else}}<span class="mini-ok">Sem alerta</span>{{end}}
+    </a>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="empty-state">
+    <h2>Nenhum cliente cadastrado</h2>
+    <p>Crie o primeiro cliente para gerar tokens de instalação dos agentes.</p>
+    <a class="button" href="/clients">Cadastrar cliente</a>
+  </div>
+  {{end}}
+</section>
+
+<section class="section-band">
+  <div class="section-title">
+    <h2>Máquinas recentes</h2>
+    <a href="/machines">Ver todas</a>
+  </div>
+  {{if .Machines}}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Máquina</th>
+          <th>Cliente</th>
+          <th>Status</th>
+          <th>CPU</th>
+          <th>RAM</th>
+          <th>Disco</th>
+          <th>Último sinal</th>
+          <th>Alertas</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Machines}}
+        <tr>
+          <td data-label="Máquina"><a class="strong-link" href="/machines/{{.ID}}">{{.Name}}</a><small>{{.Hostname}}</small></td>
+          <td data-label="Cliente">{{.ClientName}}</td>
+          <td data-label="Status"><span class="status {{if .Online}}online{{else}}offline{{end}}">{{statusText .Online}}</span></td>
+          <td data-label="CPU">{{if .LastMetric}}{{pct .LastMetric.CPUPercent}}{{else}}-{{end}}</td>
+          <td data-label="RAM">{{if .LastMetric}}{{pct .LastMetric.RAMPercent}}{{else}}-{{end}}</td>
+          <td data-label="Disco">{{if .Disks}}{{with index .Disks 0}}{{pct .UsedPercent}} · {{bytes .UsedBytes}} usados{{end}}{{else}}-{{end}}</td>
+          <td data-label="Último sinal">{{timeAgo .LastSeenAt}}</td>
+          <td data-label="Alertas">{{if .Alerts}}<span class="alert-text">{{join .Alerts ", "}}</span>{{else}}<span class="ok-text">OK</span>{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <div class="empty-line">Nenhuma máquina cadastrada.</div>
+  {{end}}
+</section>
+{{end}}

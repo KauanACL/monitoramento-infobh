@@ -1,0 +1,26 @@
+{{define "content"}}
+<header class="page-head">
+  <div>
+    <h1>{{if .Rotated}}Token renovado{{else}}Token gerado{{end}}</h1>
+    <p>Use este token na instalação do agente Windows da máquina {{.Machine.Name}}.</p>
+  </div>
+  <div class="head-actions">
+    <a class="button button-secondary" href="/machines/{{.Machine.ID}}">Abrir máquina</a>
+  </div>
+</header>
+
+<section class="token-panel">
+  <div>
+    <span class="field-label">Servidor</span>
+    <code>{{.Server}}</code>
+  </div>
+  <div>
+    <span class="field-label">Token</span>
+    <code class="copyable" data-copy="{{.Token}}">{{.Token}}</code>
+  </div>
+  <div>
+    <span class="field-label">Comando de instalação</span>
+    <code class="copyable" data-copy='infobh-agent.exe install -server {{.Server}} -token {{.Token}}'>infobh-agent.exe install -server {{.Server}} -token {{.Token}}</code>
+  </div>
+</section>
+{{end}}
