@@ -21,18 +21,30 @@ Acesse:
 http://localhost:8080
 ```
 
-## Build do servidor para Ubuntu
+## Deploy em VM Ubuntu
+
+Compile o servidor Linux na sua máquina local:
+
+```bash
+GOOS=linux GOARCH=amd64 go build -o bin/monitor-server-linux-amd64 .
+```
+
+Copie para a VM:
+
+```bash
+scp bin/monitor-server-linux-amd64 usuario@IP_DA_VM:/tmp/monitor-server
+scp deploy/monitoramento-infobh.service usuario@IP_DA_VM:/tmp/monitoramento-infobh.service
+```
 
 Na VM Ubuntu:
 
 ```bash
 sudo useradd --system --home /opt/monitoramento-infobh --shell /usr/sbin/nologin monitoramento
 sudo mkdir -p /opt/monitoramento-infobh/data
+sudo cp /tmp/monitor-server /opt/monitoramento-infobh/monitor-server
+sudo cp /tmp/monitoramento-infobh.service /etc/systemd/system/
+sudo chmod +x /opt/monitoramento-infobh/monitor-server
 sudo chown -R monitoramento:monitoramento /opt/monitoramento-infobh
-
-go build -o monitor-server ./cmd/server
-sudo cp monitor-server /opt/monitoramento-infobh/
-sudo cp deploy/monitoramento-infobh.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now monitoramento-infobh
 ```
@@ -49,31 +61,53 @@ Dashboard:
 http://IP_DA_VM:8080
 ```
 
-## Build do agente Windows
-
-No Mac/Linux:
+Ver logs:
 
 ```bash
-GOOS=windows GOARCH=amd64 go build -o bin/infobh-agent.exe ./cmd/agent
+sudo systemctl status monitoramento-infobh --no-pager
+sudo journalctl -u monitoramento-infobh -f
+```
+
+## Build do agente Windows
+
+Os agentes baixáveis ficam em `internal/server/web/static/downloads/` e são servidos pelo próprio dashboard.
+
+Para recompilar os agentes:
+
+```bash
+GOOS=windows GOARCH=amd64 go build -o internal/server/web/static/downloads/infobh-agent-windows-amd64.exe ./cmd/agent
+GOOS=windows GOARCH=386 go build -o internal/server/web/static/downloads/infobh-agent-windows-386.exe ./cmd/agent
 ```
 
 No dashboard, crie um cliente e uma máquina. A tela vai mostrar o token e o comando de instalação.
 
-No Windows, execute como Administrador:
+No Windows 64-bit, baixe:
+
+```text
+http://IP_DA_VM:8080/static/downloads/infobh-agent-windows-amd64.exe
+```
+
+Abra o Prompt/PowerShell como Administrador, entre na pasta onde o arquivo foi baixado e rode primeiro um teste:
 
 ```powershell
-.\infobh-agent.exe install -server http://IP_DA_VM:8080 -token TOKEN_GERADO
+.\infobh-agent-windows-amd64.exe once -server http://IP_DA_VM:8080 -token TOKEN_GERADO
+```
+
+Se o teste não retornar erro, instale como serviço:
+
+```powershell
+.\infobh-agent-windows-amd64.exe install -server http://IP_DA_VM:8080 -token TOKEN_GERADO
 ```
 
 Comandos úteis:
 
 ```powershell
-.\infobh-agent.exe once -server http://IP_DA_VM:8080 -token TOKEN_GERADO
-.\infobh-agent.exe stop
-.\infobh-agent.exe start
-.\infobh-agent.exe restart
-.\infobh-agent.exe uninstall
-.\infobh-agent.exe config-path
+.\infobh-agent-windows-amd64.exe stop
+.\infobh-agent-windows-amd64.exe start
+.\infobh-agent-windows-amd64.exe restart
+.\infobh-agent-windows-amd64.exe uninstall
+.\infobh-agent-windows-amd64.exe config-path
+sc query InfoBHMonitorAgent
 ```
 
 ## Coleta
@@ -111,45 +145,6 @@ Também podem ser usadas como flags:
 ```bash
 ./monitor-server -addr :8080 -db data/monitoramento.db -retention-days 30
 ```
-
-## Deploy no Render.com
-
-O projeto já inclui `render.yaml` para criar um Web Service Go com SQLite em Persistent Disk.
-
-Recomendado para produção:
-
-- Web Service pago (`starter` ou superior).
-- Persistent Disk montado em `/data`.
-- `MONITOR_DB_PATH=/data/monitoramento.db`.
-- `MONITOR_RETENTION_DAYS=30`.
-
-O Render define a porta em `PORT` automaticamente; o servidor usa essa variável quando `MONITOR_ADDR` não está definido.
-
-Passos:
-
-1. Envie este projeto para um repositório GitHub.
-2. No Render, clique em **New > Blueprint**.
-3. Conecte o repositório.
-4. Confirme o serviço `monitoramento-infobh`.
-5. Aguarde o deploy.
-
-Depois do deploy, use a URL `https://SEU-SERVICO.onrender.com` no agente:
-
-```powershell
-.\infobh-agent.exe install -server https://SEU-SERVICO.onrender.com -token TOKEN_GERADO
-```
-
-O deploy no Render também gera o agente Windows 64-bit para download em:
-
-```text
-https://SEU-SERVICO.onrender.com/static/downloads/infobh-agent-windows-amd64.exe
-```
-
-Observações:
-
-- Sem Persistent Disk, o SQLite perde dados em restart/deploy.
-- Plano gratuito não é recomendado para monitoramento porque pode dormir e atrasar heartbeats.
-- O dashboard segue sem login; qualquer pessoa com a URL consegue acessar.
 
 ## Testes
 

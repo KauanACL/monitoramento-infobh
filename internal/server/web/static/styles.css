@@ -700,6 +700,12 @@ textarea {
   max-width: 980px;
 }
 
+.download-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .field-label {
   display: block;
   color: var(--muted);

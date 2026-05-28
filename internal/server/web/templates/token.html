@@ -19,12 +19,19 @@
     <code class="copyable" data-copy="{{.Token}}">{{.Token}}</code>
   </div>
   <div>
+    <span class="field-label">Comando de teste</span>
+    <code class="copyable" data-copy='.\infobh-agent-windows-amd64.exe once -server {{.Server}} -token {{.Token}}'>.\infobh-agent-windows-amd64.exe once -server {{.Server}} -token {{.Token}}</code>
+  </div>
+  <div>
     <span class="field-label">Comando de instalação</span>
-    <code class="copyable" data-copy='infobh-agent.exe install -server {{.Server}} -token {{.Token}}'>infobh-agent.exe install -server {{.Server}} -token {{.Token}}</code>
+    <code class="copyable" data-copy='.\infobh-agent-windows-amd64.exe install -server {{.Server}} -token {{.Token}}'>.\infobh-agent-windows-amd64.exe install -server {{.Server}} -token {{.Token}}</code>
   </div>
   <div>
     <span class="field-label">Download do agente</span>
-    <a class="button" href="/static/downloads/infobh-agent-windows-amd64.exe">Baixar Windows 64-bit</a>
+    <div class="download-actions">
+      <a class="button" href="/static/downloads/infobh-agent-windows-amd64.exe">Windows 64-bit</a>
+      <a class="button button-secondary" href="/static/downloads/infobh-agent-windows-386.exe">Windows 32-bit</a>
+    </div>
   </div>
 </section>
 {{end}}
