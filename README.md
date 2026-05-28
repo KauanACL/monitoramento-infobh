@@ -100,12 +100,19 @@ Se o teste não retornar erro, instale como serviço:
 .\infobh-agent-windows-amd64.exe install -server http://IP_DA_VM:8080 -token TOKEN_GERADO
 ```
 
+Para corrigir uma instalação existente, trocar token ou reinstalar limpo, use:
+
+```powershell
+.\infobh-agent-windows-amd64.exe reinstall -server http://IP_DA_VM:8080 -token TOKEN_GERADO
+```
+
 Comandos úteis:
 
 ```powershell
 .\infobh-agent-windows-amd64.exe stop
 .\infobh-agent-windows-amd64.exe start
 .\infobh-agent-windows-amd64.exe restart
+.\infobh-agent-windows-amd64.exe reinstall -server http://IP_DA_VM:8080 -token TOKEN_GERADO
 .\infobh-agent-windows-amd64.exe uninstall
 .\infobh-agent-windows-amd64.exe config-path
 sc query InfoBHMonitorAgent

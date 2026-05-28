@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -35,6 +36,11 @@ func main() {
 			logger.Error("install failed", "error", err)
 			os.Exit(1)
 		}
+	case "reinstall":
+		if err := reinstall(logger, os.Args[2:]); err != nil {
+			logger.Error("reinstall failed", "error", err)
+			os.Exit(1)
+		}
 	case "run":
 		if err := runService(logger, os.Args[2:]); err != nil && err != context.Canceled {
 			logger.Error("agent stopped", "error", err)
@@ -58,8 +64,52 @@ func main() {
 	}
 }
 
+type installOptions struct {
+	configPath string
+	cfg        agent.Config
+}
+
 func install(logger *slog.Logger, args []string) error {
-	fs := flag.NewFlagSet("install", flag.ExitOnError)
+	opts, err := parseInstallOptions("install", args)
+	if err != nil {
+		return err
+	}
+	if err := requireServiceAdmin(); err != nil {
+		return err
+	}
+	return installService(logger, opts)
+}
+
+func reinstall(logger *slog.Logger, args []string) error {
+	opts, err := parseInstallOptions("reinstall", args)
+	if err != nil {
+		return err
+	}
+	if err := requireServiceAdmin(); err != nil {
+		return err
+	}
+
+	svc, err := newService(opts.configPath, logger)
+	if err != nil {
+		return err
+	}
+	if err := service.Control(svc, "stop"); err != nil {
+		if !ignorableReinstallControlError(err) {
+			return err
+		}
+		logger.Info("service stop skipped", "reason", err)
+	}
+	if err := service.Control(svc, "uninstall"); err != nil {
+		if !ignorableReinstallControlError(err) {
+			return err
+		}
+		logger.Info("service uninstall skipped", "reason", err)
+	}
+	return installService(logger, opts)
+}
+
+func parseInstallOptions(command string, args []string) (installOptions, error) {
+	fs := flag.NewFlagSet(command, flag.ExitOnError)
 	configPath := fs.String("config", agent.DefaultConfigPath(), "caminho do arquivo de configuracao")
 	serverURL := fs.String("server", "", "URL do servidor, ex: http://IP_DA_VM:8080")
 	token := fs.String("token", "", "token gerado no dashboard")
@@ -80,19 +130,50 @@ func install(logger *slog.Logger, args []string) error {
 	cfg.HardwareEvery = *hardware
 	cfg.TemperaturesEvery = *temperatures
 	cfg.CommandsEvery = *commands
-	if err := agent.SaveConfig(*configPath, cfg); err != nil {
+	if err := cfg.Validate(); err != nil {
+		return installOptions{}, err
+	}
+	return installOptions{configPath: *configPath, cfg: cfg}, nil
+}
+
+func installService(logger *slog.Logger, opts installOptions) error {
+	if err := agent.SaveConfig(opts.configPath, opts.cfg); err != nil {
 		return err
 	}
 
-	svc, err := newService(*configPath, logger)
+	svc, err := newService(opts.configPath, logger)
 	if err != nil {
 		return err
 	}
 	if err := service.Control(svc, "install"); err != nil {
 		return err
 	}
-	logger.Info("service installed", "config", *configPath)
+	logger.Info("service installed", "config", opts.configPath)
 	return service.Control(svc, "start")
+}
+
+func ignorableReinstallControlError(err error) bool {
+	if err == nil {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	parts := []string{
+		"does not exist",
+		"not exist",
+		"not installed",
+		"has not been installed",
+		"has not been started",
+		"não existe",
+		"nao existe",
+		"não foi iniciado",
+		"nao foi iniciado",
+	}
+	for _, part := range parts {
+		if strings.Contains(msg, part) {
+			return true
+		}
+	}
+	return false
 }
 
 func control(command string, logger *slog.Logger, args []string) error {
@@ -191,9 +272,10 @@ func usage() {
 	fmt.Println(`InfoBH Monitor Agent
 
 Comandos:
-  install -server http://IP_DA_VM:8080 -token TOKEN   grava config, instala e inicia o servico
-  run [-config caminho]                              executa como servico/console
-  once [-config caminho]                             envia uma coleta e encerra
-  start|stop|restart|uninstall                       controla o servico
-  config-path                                        mostra o caminho padrao da configuracao`)
+  install -server http://IP_DA_VM:8080 -token TOKEN     grava config, instala e inicia o servico
+  reinstall -server http://IP_DA_VM:8080 -token TOKEN   para, remove, instala e inicia o servico
+  run [-config caminho]                                executa como servico/console
+  once [-config caminho]                               envia uma coleta e encerra
+  start|stop|restart|uninstall                         controla o servico
+  config-path                                          mostra o caminho padrao da configuracao`)
 }
