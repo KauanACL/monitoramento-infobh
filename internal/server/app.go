@@ -552,6 +552,10 @@ func templateFuncs() template.FuncMap {
 		"historyCPU":    historyValues(func(m Metric) float64 { return m.CPUPercent }),
 		"historyRAM":    historyValues(func(m Metric) float64 { return m.RAMPercent }),
 		"categoryIcon":  categoryIcon,
+		"slotLabel":     slotLabel,
+		"clockMHz":      clockMHz,
+		"tempComponent": temperatureComponent,
+		"tempSensor":    temperatureSensor,
 		"safeID":        safeID,
 		"clientPercent": clientPercent,
 	}
@@ -584,6 +588,13 @@ func formatPercentValue(value float64) string {
 
 func formatTemp(value float64) string {
 	return fmt.Sprintf("%.1f C", value)
+}
+
+func clockMHz(value int) string {
+	if value <= 0 {
+		return "clock indisponivel"
+	}
+	return fmt.Sprintf("%d MHz", value)
 }
 
 func timeAgo(t *time.Time) string {
@@ -628,6 +639,61 @@ func categoryIcon(category string) string {
 	default:
 		return "device"
 	}
+}
+
+func slotLabel(index int) string {
+	return fmt.Sprintf("Slot %d", index+1)
+}
+
+func temperatureComponent(index int, name, sensorType string) string {
+	normalized := strings.ToLower(name + " " + sensorType)
+	switch {
+	case strings.Contains(normalized, "cpu"), strings.Contains(normalized, "processor"), strings.Contains(normalized, "package"):
+		return "CPU"
+	case strings.Contains(normalized, "gpu"), strings.Contains(normalized, "video"):
+		return "GPU"
+	case strings.Contains(normalized, "disk"), strings.Contains(normalized, "ssd"), strings.Contains(normalized, "hdd"), strings.Contains(normalized, "nvme"):
+		return "Armazenamento"
+	case strings.Contains(normalized, "acpi"), strings.Contains(normalized, "thermalzone"), strings.Contains(normalized, "thermal_zone"), strings.Contains(normalized, "tz"):
+		return fmt.Sprintf("Placa-mãe / ACPI %d", index+1)
+	default:
+		clean := cleanTemperatureName(name)
+		if clean == "" {
+			return fmt.Sprintf("Sensor %d", index+1)
+		}
+		return clean
+	}
+}
+
+func temperatureSensor(name, source string) string {
+	clean := cleanTemperatureName(name)
+	switch {
+	case clean != "" && source != "":
+		return fmt.Sprintf("Sensor %s · %s", clean, source)
+	case clean != "":
+		return fmt.Sprintf("Sensor %s", clean)
+	case source != "":
+		return source
+	default:
+		return "Sensor nativo do Windows"
+	}
+}
+
+func cleanTemperatureName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	parts := strings.FieldsFunc(name, func(r rune) bool {
+		return r == '\\' || r == '/' || r == ':'
+	})
+	for i := len(parts) - 1; i >= 0; i-- {
+		part := strings.TrimSpace(parts[i])
+		if part != "" {
+			return part
+		}
+	}
+	return name
 }
 
 func safeID(value string) string {

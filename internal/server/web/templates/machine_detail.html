@@ -134,10 +134,13 @@
           <h3>Memória instalada</h3>
           {{if .Hardware.RAMModules}}
           <div class="ram-module-list">
-            {{range .Hardware.RAMModules}}
+            {{range $index, $module := .Hardware.RAMModules}}
             <div class="ram-module">
-              <strong>{{if .Slot}}{{.Slot}}{{else}}{{.BankLabel}}{{end}}</strong>
-              <small>{{bytes .CapacityBytes}} · {{.MemoryType}} · {{.SpeedMHz}} MHz · {{.Manufacturer}} · {{.PartNumber}}</small>
+              <strong>{{slotLabel $index}}</strong>
+              <div>
+                <span>{{bytes $module.CapacityBytes}} · {{if $module.MemoryType}}{{$module.MemoryType}}{{else}}tipo indisponível{{end}}{{if $module.SpeedMHz}} · {{clockMHz $module.SpeedMHz}}{{end}}</span>
+                <small>{{if $module.Manufacturer}}{{$module.Manufacturer}}{{else}}fabricante indisponível{{end}}{{if $module.PartNumber}} · {{$module.PartNumber}}{{end}}{{if not $module.SpeedMHz}} · velocidade não informada{{end}}</small>
+              </div>
             </div>
             {{end}}
           </div>
@@ -159,11 +162,11 @@
       <div data-live-list="temperatures">
         {{if .Temperatures.Available}}
         <div class="temperature-grid">
-          {{range .Temperatures.Readings}}
+          {{range $index, $reading := .Temperatures.Readings}}
           <div class="temperature-card">
-            <span>{{.Name}}</span>
-            <strong>{{temp .CurrentCelsius}}</strong>
-            <small>{{.Source}}</small>
+            <span>{{tempComponent $index $reading.Name $reading.SensorType}}</span>
+            <strong>{{temp $reading.CurrentCelsius}}</strong>
+            <small>{{tempSensor $reading.Name $reading.Source}}</small>
           </div>
           {{end}}
         </div>

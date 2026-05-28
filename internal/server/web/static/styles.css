@@ -335,6 +335,7 @@ input:disabled {
 .section-title span {
   color: var(--muted);
   font-size: 13px;
+  text-align: right;
 }
 
 .section-title a:hover {
@@ -821,13 +822,6 @@ textarea {
   grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr);
 }
 
-.machine-chart-panel,
-.storage-panel,
-.hardware-panel,
-.temperature-panel {
-  min-height: 100%;
-}
-
 .chart-stack {
   display: grid;
   gap: 12px;
@@ -1032,16 +1026,55 @@ textarea {
 }
 
 .ram-module {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
   padding: 12px;
 }
 
+.ram-module > strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  border-radius: 999px;
+  background: rgba(15, 139, 141, .10);
+  color: var(--accent-dark);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.ram-module div {
+  min-width: 0;
+}
+
+.ram-module span {
+  display: block;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 760;
+  overflow-wrap: anywhere;
+}
+
+.ram-module small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .temperature-grid {
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
 }
 
 .temperature-card {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 124px;
   padding: 14px;
-  min-height: 112px;
 }
 
 .temperature-card span,
@@ -1050,14 +1083,21 @@ textarea {
   color: var(--muted);
   font-size: 12px;
   font-weight: 760;
+  overflow-wrap: anywhere;
 }
 
 .temperature-card strong,
 .settings-summary strong {
   display: block;
-  margin-top: 6px;
   font-size: 24px;
   line-height: 1;
+}
+
+.temperature-card small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .inline-action-form {
@@ -1072,7 +1112,13 @@ textarea {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 6px 12px;
+  min-width: 0;
   padding: 12px;
+}
+
+.command-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .command-row span {
@@ -1085,6 +1131,7 @@ textarea {
 .command-row small {
   grid-column: 1 / -1;
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .command-row.succeeded span {
@@ -1283,6 +1330,15 @@ code {
   .section-title {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .section-title span {
+    text-align: left;
+  }
+
+  .ram-module {
+    grid-template-columns: 1fr;
+    align-items: start;
   }
 
   .event-row {

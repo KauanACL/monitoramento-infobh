@@ -107,6 +107,11 @@ function formatTemp(value) {
   return Number.isFinite(parsed) ? `${parsed.toFixed(1)} C` : "-";
 }
 
+function formatMHz(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? `${Math.round(parsed)} MHz` : "";
+}
+
 function timeAgo(value) {
   if (!value) return "nunca";
   const date = new Date(value);
@@ -146,6 +151,34 @@ function iconClass(category) {
   if (normalized === "impressora") return "printer";
   if (normalized === "armazenamento") return "drive";
   return "device";
+}
+
+function ramSlotName(index) {
+  return `Slot ${index + 1}`;
+}
+
+function cleanTemperatureName(name) {
+  const parts = String(name || "").split(/[\\/:]/).map((item) => item.trim()).filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : "";
+}
+
+function temperatureComponent(reading, index) {
+  const normalized = `${reading?.Name || ""} ${reading?.SensorType || ""}`.toLowerCase();
+  if (normalized.includes("cpu") || normalized.includes("processor") || normalized.includes("package")) return "CPU";
+  if (normalized.includes("gpu") || normalized.includes("video")) return "GPU";
+  if (normalized.includes("disk") || normalized.includes("ssd") || normalized.includes("hdd") || normalized.includes("nvme")) return "Armazenamento";
+  if (normalized.includes("acpi") || normalized.includes("thermalzone") || normalized.includes("thermal_zone") || normalized.includes("tz")) {
+    return `Placa-mãe / ACPI ${index + 1}`;
+  }
+  return cleanTemperatureName(reading?.Name) || `Sensor ${index + 1}`;
+}
+
+function temperatureSensor(reading) {
+  const clean = cleanTemperatureName(reading?.Name);
+  const source = reading?.Source || "";
+  if (clean && source) return `Sensor ${clean} · ${source}`;
+  if (clean) return `Sensor ${clean}`;
+  return source || "Sensor nativo do Windows";
 }
 
 function setText(root, selector, value) {
@@ -212,11 +245,19 @@ function renderHardware(root, hardware) {
     return;
   }
   const modules = hardware.RAMModules || [];
-  const ram = modules.length ? modules.map((module) => `
-    <div class="ram-module">
-      <strong>${escapeHTML(module.slot || module.bank_label || "-")}</strong>
-      <small>${formatBytes(module.capacity_bytes)} · ${escapeHTML(module.memory_type || "-")} · ${escapeHTML(module.speed_mhz || "-")} MHz · ${escapeHTML(module.manufacturer || "-")} · ${escapeHTML(module.part_number || "-")}</small>
-    </div>`).join("") : '<div class="empty-line">Sem dados dos slots de RAM.</div>';
+  const ram = modules.length ? modules.map((module, index) => {
+    const speed = formatMHz(module.speed_mhz);
+    const summary = [formatBytes(module.capacity_bytes), module.memory_type || "tipo indisponível", speed].filter(Boolean).join(" · ");
+    const details = [module.manufacturer || "fabricante indisponível", module.part_number, speed ? "" : "velocidade não informada"].filter(Boolean).join(" · ");
+    return `
+      <div class="ram-module">
+        <strong>${ramSlotName(index)}</strong>
+        <div>
+          <span>${escapeHTML(summary)}</span>
+          <small>${escapeHTML(details)}</small>
+        </div>
+      </div>`;
+  }).join("") : '<div class="empty-line">Sem dados dos slots de RAM.</div>';
   target.innerHTML = `
     <div class="hardware-block">
       <div class="hardware-summary">
@@ -243,11 +284,11 @@ function renderTemperatures(root, temperatures) {
     target.innerHTML = `<div class="empty-line">${escapeHTML((temperatures && temperatures.Message) || "Aguardando coleta de temperatura")}</div>`;
     return;
   }
-  target.innerHTML = `<div class="temperature-grid">${temperatures.Readings.map((reading) => `
+  target.innerHTML = `<div class="temperature-grid">${temperatures.Readings.map((reading, index) => `
     <div class="temperature-card">
-      <span>${escapeHTML(reading.Name)}</span>
+      <span>${escapeHTML(temperatureComponent(reading, index))}</span>
       <strong>${formatTemp(reading.CurrentCelsius)}</strong>
-      <small>${escapeHTML(reading.Source)}</small>
+      <small>${escapeHTML(temperatureSensor(reading))}</small>
     </div>`).join("")}</div>`;
 }
 
