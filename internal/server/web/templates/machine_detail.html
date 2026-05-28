@@ -1,57 +1,92 @@
 {{define "content"}}
 <div data-machine-detail data-machine-id="{{.ID}}">
-  <header class="page-head">
-    <div>
+  <header class="machine-hero">
+    <div class="machine-hero-main">
+      <span class="machine-state {{if .Online}}online{{else}}offline{{end}}" data-status-pill>
+        <i></i>
+        <strong data-live="status">{{statusText .Online}}</strong>
+      </span>
       <h1>{{.Name}}</h1>
       <p><span data-live="client-host">{{.Client.Name}} · {{if .Hostname}}{{.Hostname}}{{else}}aguardando primeiro heartbeat{{end}}</span></p>
-      <div class="machine-alerts" data-live="alerts">
-        {{if .Alerts}}{{range .Alerts}}<span>{{.}}</span>{{end}}{{else}}<span class="ok">OK</span>{{end}}
+      <div class="machine-meta-grid">
+        <div>
+          <span>IP</span>
+          <strong data-live="ip">{{if .IPAddress}}{{.IPAddress}}{{else}}-{{end}}</strong>
+        </div>
+        <div>
+          <span>Sistema</span>
+          <strong data-live="os">{{if .OSName}}{{.OSName}}{{else}}-{{end}}</strong>
+        </div>
+        <div>
+          <span>Agente</span>
+          <strong data-live="agent">{{if .AgentVersion}}{{.AgentVersion}}{{else}}-{{end}}</strong>
+        </div>
       </div>
     </div>
-    <div class="head-actions">
+
+    <div class="machine-hero-side">
       <form method="post" action="/machines/{{.ID}}/rotate-token">
         <button class="button button-secondary" type="submit">Renovar token</button>
       </form>
+      <div class="hero-signal">
+        <span>Último sinal</span>
+        <strong data-live="last-seen">{{timeAgo .LastSeenAt}}</strong>
+      </div>
+      <div class="machine-alerts" data-live="alerts">
+        {{if .Alerts}}{{range .Alerts}}<span>{{.}}</span>{{end}}{{else}}<span class="ok">OK</span>{{end}}
+      </div>
     </div>
   </header>
 
   {{if .Flash}}<p class="notice">{{.Flash}}</p>{{end}}
   {{if .Error}}<p class="notice error">{{.Error}}</p>{{end}}
 
-  <section class="metrics-grid detail">
-    <article class="metric-tile {{if .Online}}good{{else}}danger{{end}}" data-tile="status">
-      <span>Status</span>
-      <strong data-live="status">{{statusText .Online}}</strong>
+  <section class="resource-grid">
+    <article class="resource-card" data-tile="cpu">
+      <div class="resource-card-head">
+        <span>CPU</span>
+        <strong data-live="cpu">{{if .LastMetric}}{{pct .LastMetric.CPUPercent}}{{else}}-{{end}}</strong>
+      </div>
+      <div class="bar resource-bar"><i data-live-bar="cpu" style="width: {{if .LastMetric}}{{pct .LastMetric.CPUPercent}}{{else}}0%{{end}}"></i></div>
+      <small>Alerta em {{pct .Settings.CPUPercent}}</small>
     </article>
-    <article class="metric-tile" data-tile="cpu">
-      <span>CPU</span>
-      <strong data-live="cpu">{{if .LastMetric}}{{pct .LastMetric.CPUPercent}}{{else}}-{{end}}</strong>
+    <article class="resource-card" data-tile="ram">
+      <div class="resource-card-head">
+        <span>RAM</span>
+        <strong data-live="ram">{{if .LastMetric}}{{pct .LastMetric.RAMPercent}}{{else}}-{{end}}</strong>
+      </div>
+      <div class="bar resource-bar"><i data-live-bar="ram" style="width: {{if .LastMetric}}{{pct .LastMetric.RAMPercent}}{{else}}0%{{end}}"></i></div>
+      <small>Alerta em {{pct .Settings.RAMPercent}}</small>
     </article>
-    <article class="metric-tile" data-tile="ram">
-      <span>RAM</span>
-      <strong data-live="ram">{{if .LastMetric}}{{pct .LastMetric.RAMPercent}}{{else}}-{{end}}</strong>
+    <article class="resource-card {{if .InternetOnline}}good{{else}}warn{{end}}" data-tile="internet">
+      <div class="resource-card-head">
+        <span>Internet</span>
+        <strong data-live="internet">{{if .InternetOnline}}OK{{else}}Falha{{end}}</strong>
+      </div>
+      <p data-live="connection-note">{{if .InternetOnline}}Conectividade validada{{else}}Sem conectividade reportada{{end}}</p>
     </article>
-    <article class="metric-tile {{if .InternetOnline}}good{{else}}warn{{end}}" data-tile="internet">
-      <span>Internet</span>
-      <strong data-live="internet">{{if .InternetOnline}}OK{{else}}Falha{{end}}</strong>
-    </article>
-    <article class="metric-tile">
-      <span>Último sinal</span>
-      <strong data-live="last-seen">{{timeAgo .LastSeenAt}}</strong>
+    <article class="resource-card">
+      <div class="resource-card-head">
+        <span>Coleta</span>
+        <strong data-live="history-updated">ao vivo</strong>
+      </div>
+      <p>Atualização automática a cada envio da máquina.</p>
     </article>
   </section>
 
-  <section class="detail-grid">
-    <article class="chart-panel">
+  <section class="machine-main-grid">
+    <article class="chart-panel machine-chart-panel">
       <div class="section-title">
-        <h2>Histórico</h2>
-        <span data-live="history-updated">últimas 60 coletas</span>
+        <h2>Histórico de uso</h2>
+        <span>últimas 60 coletas</span>
       </div>
-      <canvas class="sparkline" height="160" data-chart="cpu" data-label="CPU" data-values="{{historyCPU .History}}"></canvas>
-      <canvas class="sparkline ram" height="160" data-chart="ram" data-label="RAM" data-values="{{historyRAM .History}}"></canvas>
+      <div class="chart-stack">
+        <canvas class="sparkline" height="160" data-chart="cpu" data-label="CPU" data-values="{{historyCPU .History}}"></canvas>
+        <canvas class="sparkline ram" height="160" data-chart="ram" data-label="RAM" data-values="{{historyRAM .History}}"></canvas>
+      </div>
     </article>
 
-    <article class="chart-panel">
+    <article class="chart-panel storage-panel">
       <div class="section-title">
         <h2>Armazenamento</h2>
         <span>alerta em {{pct .Settings.StoragePercent}}</span>
@@ -75,8 +110,8 @@
     </article>
   </section>
 
-  <section class="detail-grid">
-    <article class="chart-panel">
+  <section class="machine-main-grid">
+    <article class="chart-panel hardware-panel">
       <div class="section-title">
         <h2>Hardware</h2>
         {{if .Hardware}}<span>coletado {{clock .Hardware.CollectedAt}}</span>{{else}}<span>aguardando coleta</span>{{end}}
@@ -84,15 +119,19 @@
       <div data-live-list="hardware">
         {{if .Hardware}}
         <div class="hardware-block">
-          <h3>CPU</h3>
-          <dl>
-            <div><dt>Modelo</dt><dd>{{.Hardware.CPUName}}</dd></div>
-            <div><dt>Fabricante</dt><dd>{{.Hardware.CPUManufacturer}}</dd></div>
-            <div><dt>Núcleos</dt><dd>{{.Hardware.CPUCores}}</dd></div>
-            <div><dt>Threads</dt><dd>{{.Hardware.CPULogicalProcessors}}</dd></div>
-            <div><dt>Clock</dt><dd>{{.Hardware.CPUMaxClockMHz}} MHz</dd></div>
-          </dl>
-          <h3>RAM</h3>
+          <div class="hardware-summary">
+            <div>
+              <span>CPU</span>
+              <strong>{{if .Hardware.CPUName}}{{.Hardware.CPUName}}{{else}}-{{end}}</strong>
+              <small>{{.Hardware.CPUManufacturer}} · {{.Hardware.CPUCores}} núcleos · {{.Hardware.CPULogicalProcessors}} threads · {{.Hardware.CPUMaxClockMHz}} MHz</small>
+            </div>
+            <div>
+              <span>Equipamento</span>
+              <strong>{{if .Hardware.SystemModel}}{{.Hardware.SystemModel}}{{else}}-{{end}}</strong>
+              <small>{{.Hardware.SystemManufacturer}} · {{.Hardware.BaseboardProduct}} · BIOS {{.Hardware.BIOSVersion}}</small>
+            </div>
+          </div>
+          <h3>Memória instalada</h3>
           {{if .Hardware.RAMModules}}
           <div class="ram-module-list">
             {{range .Hardware.RAMModules}}
@@ -112,7 +151,7 @@
       </div>
     </article>
 
-    <article class="chart-panel">
+    <article class="chart-panel temperature-panel">
       <div class="section-title">
         <h2>Temperaturas</h2>
         {{if .Temperatures.CollectedAt.IsZero}}<span>aguardando coleta</span>{{else}}<span>coletado {{clock .Temperatures.CollectedAt}}</span>{{end}}
@@ -135,7 +174,7 @@
     </article>
   </section>
 
-  <section class="section-band">
+  <section class="section-band device-section">
     <div class="section-title">
       <h2>Dispositivos</h2>
       <span>USB, impressoras e armazenamento</span>
@@ -164,54 +203,56 @@
     </div>
   </section>
 
-  <section class="section-band">
-    <div class="section-title">
-      <h2>Ações remotas</h2>
-      <span>limpeza de temporários seguros</span>
-    </div>
-    {{if .ActionPINEnabled}}
-    <form class="inline-action-form" method="post" action="/machines/{{.ID}}/commands/cache-clean">
-      <label>
-        PIN de ação
-        <input type="password" name="pin" autocomplete="off">
-      </label>
-      <button class="button" type="submit">Limpar temporários</button>
-    </form>
-    {{else}}
-    <div class="empty-line">PIN de ação indisponível.</div>
-    {{end}}
-    <div class="command-list" data-live-list="commands">
-      {{if .Commands}}
-        {{range .Commands}}
-        <div class="command-row {{.Status}}">
-          <strong>{{.Type}}</strong>
-          <span>{{.Status}}</span>
-          <small>{{clock .CreatedAt}}{{if .ResultMessage}} · {{.ResultMessage}}{{end}}{{if .ErrorMessage}} · {{.ErrorMessage}}{{end}}</small>
-        </div>
-        {{end}}
+  <section class="machine-main-grid lower-grid">
+    <article class="section-band action-section">
+      <div class="section-title">
+        <h2>Ações remotas</h2>
+        <span>limpeza de temporários seguros</span>
+      </div>
+      {{if .ActionPINEnabled}}
+      <form class="inline-action-form" method="post" action="/machines/{{.ID}}/commands/cache-clean">
+        <label>
+          PIN de ação
+          <input type="password" name="pin" autocomplete="off">
+        </label>
+        <button class="button" type="submit">Limpar temporários</button>
+      </form>
       {{else}}
-        <div class="empty-line">Sem comandos recentes.</div>
+      <div class="empty-line">PIN de ação indisponível.</div>
       {{end}}
-    </div>
-  </section>
+      <div class="command-list" data-live-list="commands">
+        {{if .Commands}}
+          {{range .Commands}}
+          <div class="command-row {{.Status}}">
+            <strong>{{.Type}}</strong>
+            <span>{{.Status}}</span>
+            <small>{{clock .CreatedAt}}{{if .ResultMessage}} · {{.ResultMessage}}{{end}}{{if .ErrorMessage}} · {{.ErrorMessage}}{{end}}</small>
+          </div>
+          {{end}}
+        {{else}}
+          <div class="empty-line">Sem comandos recentes.</div>
+        {{end}}
+      </div>
+    </article>
 
-  <section class="section-band">
-    <div class="section-title">
-      <h2>Eventos</h2>
-    </div>
-    <div class="event-list" data-live-list="events">
-      {{if .Events}}
-        {{range .Events}}
-        <div class="event-row">
-          <span class="event-dot {{.Severity}}"></span>
-          <strong>{{.Message}}</strong>
-          <small>{{clock .CreatedAt}}</small>
-        </div>
+    <article class="section-band event-section">
+      <div class="section-title">
+        <h2>Eventos</h2>
+      </div>
+      <div class="event-list" data-live-list="events">
+        {{if .Events}}
+          {{range .Events}}
+          <div class="event-row">
+            <span class="event-dot {{.Severity}}"></span>
+            <strong>{{.Message}}</strong>
+            <small>{{clock .CreatedAt}}</small>
+          </div>
+          {{end}}
+        {{else}}
+          <div class="empty-line">Sem eventos recentes.</div>
         {{end}}
-      {{else}}
-        <div class="empty-line">Sem eventos recentes.</div>
-      {{end}}
-    </div>
+      </div>
+    </article>
   </section>
 </div>
 {{end}}

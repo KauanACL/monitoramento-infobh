@@ -160,6 +160,19 @@ function setTile(root, name, state) {
   if (state) tile.classList.add(state);
 }
 
+function setStatusPill(root, online) {
+  const pill = root.querySelector("[data-status-pill]");
+  if (!pill) return;
+  pill.classList.toggle("online", online);
+  pill.classList.toggle("offline", !online);
+}
+
+function setBar(root, name, value) {
+  const bar = root.querySelector(`[data-live-bar="${name}"]`);
+  if (!bar) return;
+  bar.style.width = formatPercent(value);
+}
+
 function renderAlerts(root, alerts) {
   const target = root.querySelector('[data-live="alerts"]');
   if (!target) return;
@@ -206,15 +219,19 @@ function renderHardware(root, hardware) {
     </div>`).join("") : '<div class="empty-line">Sem dados dos slots de RAM.</div>';
   target.innerHTML = `
     <div class="hardware-block">
-      <h3>CPU</h3>
-      <dl>
-        <div><dt>Modelo</dt><dd>${escapeHTML(hardware.CPUName || "-")}</dd></div>
-        <div><dt>Fabricante</dt><dd>${escapeHTML(hardware.CPUManufacturer || "-")}</dd></div>
-        <div><dt>Núcleos</dt><dd>${escapeHTML(hardware.CPUCores || "-")}</dd></div>
-        <div><dt>Threads</dt><dd>${escapeHTML(hardware.CPULogicalProcessors || "-")}</dd></div>
-        <div><dt>Clock</dt><dd>${escapeHTML(hardware.CPUMaxClockMHz || "-")} MHz</dd></div>
-      </dl>
-      <h3>RAM</h3>
+      <div class="hardware-summary">
+        <div>
+          <span>CPU</span>
+          <strong>${escapeHTML(hardware.CPUName || "-")}</strong>
+          <small>${escapeHTML(hardware.CPUManufacturer || "-")} · ${escapeHTML(hardware.CPUCores || "-")} núcleos · ${escapeHTML(hardware.CPULogicalProcessors || "-")} threads · ${escapeHTML(hardware.CPUMaxClockMHz || "-")} MHz</small>
+        </div>
+        <div>
+          <span>Equipamento</span>
+          <strong>${escapeHTML(hardware.SystemModel || "-")}</strong>
+          <small>${escapeHTML(hardware.SystemManufacturer || "-")} · ${escapeHTML(hardware.BaseboardProduct || "-")} · BIOS ${escapeHTML(hardware.BIOSVersion || "-")}</small>
+        </div>
+      </div>
+      <h3>Memória instalada</h3>
       <div class="ram-module-list">${ram}</div>
     </div>`;
 }
@@ -295,7 +312,7 @@ function updateHistory(root, history) {
     ram.dataset.values = ramValues;
     drawSparkline(ram);
   }
-  setText(root, '[data-live="history-updated"]', `atualizado ${clock(new Date().toISOString())}`);
+  setText(root, '[data-live="history-updated"]', "ao vivo");
 }
 
 function applyDeviceFilter(root) {
@@ -326,11 +343,20 @@ function updateMachineDetail(root, detail) {
   const metric = detail.LastMetric;
   setText(root, '[data-live="client-host"]', `${detail.Client.Name} · ${detail.Hostname || "aguardando primeiro heartbeat"}`);
   setText(root, '[data-live="status"]', detail.Online ? "Online" : "Offline");
+  setText(root, '[data-live="ip"]', detail.IPAddress || "-");
+  setText(root, '[data-live="os"]', detail.OSName || "-");
+  setText(root, '[data-live="agent"]', detail.AgentVersion || "-");
   setText(root, '[data-live="cpu"]', metric ? formatPercent(metric.CPUPercent) : "-");
   setText(root, '[data-live="ram"]', metric ? formatPercent(metric.RAMPercent) : "-");
   setText(root, '[data-live="internet"]', metric && metric.InternetOnline ? "OK" : "Falha");
+  setText(root, '[data-live="connection-note"]', metric && metric.InternetOnline ? "Conectividade validada" : "Sem conectividade reportada");
   setText(root, '[data-live="last-seen"]', timeAgo(detail.LastSeenAt));
+  setStatusPill(root, detail.Online);
+  setBar(root, "cpu", metric ? metric.CPUPercent : 0);
+  setBar(root, "ram", metric ? metric.RAMPercent : 0);
   setTile(root, "status", detail.Online ? "good" : "danger");
+  setTile(root, "cpu", metric && detail.Settings && metric.CPUPercent >= detail.Settings.CPUPercent ? "warn" : "");
+  setTile(root, "ram", metric && detail.Settings && metric.RAMPercent >= detail.Settings.RAMPercent ? "warn" : "");
   setTile(root, "internet", metric && metric.InternetOnline ? "good" : "warn");
   renderAlerts(root, detail.Alerts);
   renderDisks(root, detail.Disks);
