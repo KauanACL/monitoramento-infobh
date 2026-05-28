@@ -21,6 +21,10 @@
           <span>Agente</span>
           <strong data-live="agent">{{if .AgentVersion}}{{.AgentVersion}}{{else}}-{{end}}</strong>
         </div>
+        <div class="machine-meta-signal">
+          <span>Último sinal</span>
+          <strong data-live="last-seen">{{timeAgo .LastSeenAt}}</strong>
+        </div>
       </div>
     </div>
 
@@ -28,10 +32,6 @@
       <form method="post" action="/machines/{{.ID}}/rotate-token">
         <button class="button button-secondary" type="submit">Renovar token</button>
       </form>
-      <div class="hero-signal">
-        <span>Último sinal</span>
-        <strong data-live="last-seen">{{timeAgo .LastSeenAt}}</strong>
-      </div>
       <div class="machine-alerts" data-live="alerts">
         {{if .Alerts}}{{range .Alerts}}<span>{{.}}</span>{{end}}{{else}}<span class="ok">OK</span>{{end}}
       </div>
