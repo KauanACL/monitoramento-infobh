@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"embed"
 	"encoding/json"
@@ -29,6 +30,9 @@ func NewApp(store *Store, cfg Config, logger *slog.Logger) *App {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	if strings.TrimSpace(cfg.ActionPIN) == "" {
+		cfg.ActionPIN = DefaultActionPIN
+	}
 	return &App{store: store, cfg: cfg, log: logger}
 }
 
@@ -44,11 +48,19 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("GET /machines", a.handleMachines)
 	mux.HandleFunc("POST /machines", a.handleCreateMachine)
 	mux.HandleFunc("GET /machines/{id}", a.handleMachineDetail)
+	mux.HandleFunc("GET /api/machines/{id}/live", a.handleMachineLive)
+	mux.HandleFunc("POST /machines/{id}/commands/cache-clean", a.handleCacheCleanCommand)
 	mux.HandleFunc("POST /machines/{id}/rotate-token", a.handleRotateToken)
+	mux.HandleFunc("GET /settings/alerts", a.handleAlertSettings)
+	mux.HandleFunc("POST /settings/alerts", a.handleSaveAlertSettings)
 
 	mux.HandleFunc("POST /api/agent/heartbeat", a.handleAgentHeartbeat)
 	mux.HandleFunc("POST /api/agent/metrics", a.handleAgentMetrics)
 	mux.HandleFunc("POST /api/agent/devices", a.handleAgentDevices)
+	mux.HandleFunc("POST /api/agent/hardware", a.handleAgentHardware)
+	mux.HandleFunc("POST /api/agent/temperatures", a.handleAgentTemperatures)
+	mux.HandleFunc("POST /api/agent/commands/poll", a.handleAgentCommandPoll)
+	mux.HandleFunc("POST /api/agent/commands/{id}/result", a.handleAgentCommandResult)
 	mux.HandleFunc("GET /healthz", a.handleHealth)
 
 	return a.securityHeaders(a.requestLog(mux))
@@ -164,7 +176,89 @@ func (a *App) handleMachineDetail(w http.ResponseWriter, r *http.Request) {
 		a.serverError(w, err)
 		return
 	}
+	detail.ActionPINEnabled = a.actionPINEnabled()
+	detail.Flash = r.URL.Query().Get("flash")
+	detail.Error = r.URL.Query().Get("error")
 	a.render(w, "machine_detail.html", detail)
+}
+
+func (a *App) handleMachineLive(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	detail, err := a.store.MachineDetail(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
+		a.serverError(w, err)
+		return
+	}
+	detail.ActionPINEnabled = a.actionPINEnabled()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"generated_at": time.Now().UTC().Format(time.RFC3339Nano),
+		"detail":       detail,
+	})
+}
+
+func (a *App) handleCacheCleanCommand(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		a.badRequest(w, "Formulario invalido")
+		return
+	}
+	if !a.checkActionPIN(w, r) {
+		return
+	}
+	if _, err := a.store.GetMachine(r.Context(), id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := a.store.CreateCacheCleanCommand(r.Context(), id); err != nil {
+		a.serverError(w, err)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/machines/%d?flash=Limpeza+solicitada", id), http.StatusSeeOther)
+}
+
+func (a *App) handleAlertSettings(w http.ResponseWriter, r *http.Request) {
+	settings, err := a.store.AlertSettings(r.Context())
+	if err != nil {
+		a.serverError(w, err)
+		return
+	}
+	a.render(w, "settings_alerts.html", map[string]any{
+		"Settings":         settings,
+		"ActionPINEnabled": a.actionPINEnabled(),
+		"Flash":            r.URL.Query().Get("flash"),
+	})
+}
+
+func (a *App) handleSaveAlertSettings(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		a.badRequest(w, "Formulario invalido")
+		return
+	}
+	if !a.checkActionPIN(w, r) {
+		return
+	}
+	settings := AlertSettings{
+		CPUPercent:     parseFormPercent(r, "cpu_percent", 85),
+		RAMPercent:     parseFormPercent(r, "ram_percent", 85),
+		StoragePercent: parseFormPercent(r, "storage_percent", 90),
+	}
+	if _, err := a.store.SaveAlertSettings(r.Context(), settings); err != nil {
+		a.serverError(w, err)
+		return
+	}
+	http.Redirect(w, r, "/settings/alerts?flash=Alertas+salvos", http.StatusSeeOther)
 }
 
 func (a *App) handleRotateToken(w http.ResponseWriter, r *http.Request) {
@@ -239,6 +333,92 @@ func (a *App) handleAgentDevices(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "machine_id": machine.ID})
 }
 
+func (a *App) handleAgentHardware(w http.ResponseWriter, r *http.Request) {
+	machine, ok := a.authenticateAgent(w, r)
+	if !ok {
+		return
+	}
+	var payload AgentHardwarePayload
+	if !decodeJSON(w, r, &payload) {
+		return
+	}
+	if err := a.store.RecordHardware(r.Context(), machine.ID, payload); err != nil {
+		a.serverError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "machine_id": machine.ID})
+}
+
+func (a *App) handleAgentTemperatures(w http.ResponseWriter, r *http.Request) {
+	machine, ok := a.authenticateAgent(w, r)
+	if !ok {
+		return
+	}
+	var payload AgentTemperaturePayload
+	if !decodeJSON(w, r, &payload) {
+		return
+	}
+	if err := a.store.RecordTemperatures(r.Context(), machine.ID, payload); err != nil {
+		a.serverError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "machine_id": machine.ID})
+}
+
+func (a *App) handleAgentCommandPoll(w http.ResponseWriter, r *http.Request) {
+	machine, ok := a.authenticateAgent(w, r)
+	if !ok {
+		return
+	}
+	command, err := a.store.ClaimNextCommand(r.Context(), machine.ID)
+	if err != nil {
+		a.serverError(w, err)
+		return
+	}
+	if command == nil {
+		writeJSON(w, http.StatusOK, AgentCommandPollResponse{OK: true})
+		return
+	}
+	payload := json.RawMessage(command.RequestPayload)
+	if len(payload) == 0 || !json.Valid(payload) {
+		payload = json.RawMessage(`{}`)
+	}
+	writeJSON(w, http.StatusOK, AgentCommandPollResponse{
+		OK: true,
+		Command: &AgentCommandPayload{
+			ID:        command.ID,
+			Type:      command.Type,
+			Payload:   payload,
+			CreatedAt: command.CreatedAt.Format(time.RFC3339Nano),
+		},
+	})
+}
+
+func (a *App) handleAgentCommandResult(w http.ResponseWriter, r *http.Request) {
+	machine, ok := a.authenticateAgent(w, r)
+	if !ok {
+		return
+	}
+	commandID, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	var payload AgentCommandResultPayload
+	if !decodeJSON(w, r, &payload) {
+		return
+	}
+	if err := a.store.RecordCommandResult(r.Context(), machine.ID, commandID, payload); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
+		a.serverError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "machine_id": machine.ID})
+}
+
 func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
@@ -275,6 +455,27 @@ func (a *App) serverError(w http.ResponseWriter, err error) {
 
 func (a *App) badRequest(w http.ResponseWriter, msg string) {
 	http.Error(w, msg, http.StatusBadRequest)
+}
+
+func (a *App) actionPINEnabled() bool {
+	return strings.TrimSpace(a.cfg.ActionPIN) != ""
+}
+
+func (a *App) checkActionPIN(w http.ResponseWriter, r *http.Request) bool {
+	expected := strings.TrimSpace(a.cfg.ActionPIN)
+	if expected == "" {
+		http.Error(w, "PIN de acao indisponivel", http.StatusForbidden)
+		return false
+	}
+	pin := strings.TrimSpace(r.FormValue("pin"))
+	if pin == "" {
+		pin = strings.TrimSpace(r.Header.Get("X-Action-PIN"))
+	}
+	if subtle.ConstantTimeCompare([]byte(pin), []byte(expected)) != 1 {
+		http.Error(w, "PIN invalido", http.StatusForbidden)
+		return false
+	}
+	return true
 }
 
 func (a *App) requestLog(next http.Handler) http.Handler {
@@ -329,10 +530,21 @@ func publicServerURL(r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
+func parseFormPercent(r *http.Request, key string, fallback float64) float64 {
+	value := strings.ReplaceAll(strings.TrimSpace(r.FormValue(key)), ",", ".")
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return fallback
+	}
+	return normalizeThreshold(parsed, fallback)
+}
+
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{
 		"bytes":         formatBytes,
 		"pct":           formatPercent,
+		"pctValue":      formatPercentValue,
+		"temp":          formatTemp,
 		"timeAgo":       timeAgo,
 		"clock":         clock,
 		"statusText":    statusText,
@@ -364,6 +576,14 @@ func formatBytes(value int64) string {
 
 func formatPercent(value float64) string {
 	return fmt.Sprintf("%.0f%%", value)
+}
+
+func formatPercentValue(value float64) string {
+	return fmt.Sprintf("%.0f", value)
+}
+
+func formatTemp(value float64) string {
+	return fmt.Sprintf("%.1f C", value)
 }
 
 func timeAgo(t *time.Time) string {

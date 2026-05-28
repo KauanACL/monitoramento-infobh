@@ -29,10 +29,13 @@ func NewRunner(cfg Config, logger *slog.Logger) *Runner {
 
 func (r *Runner) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(6)
 	go r.loop(ctx, &wg, "heartbeat", r.cfg.HeartbeatEvery, r.sendHeartbeat)
 	go r.loop(ctx, &wg, "metrics", r.cfg.MetricsEvery, r.sendMetrics)
 	go r.loop(ctx, &wg, "devices", r.cfg.DevicesEvery, r.sendDevices)
+	go r.loop(ctx, &wg, "hardware", r.cfg.HardwareEvery, r.sendHardware)
+	go r.loop(ctx, &wg, "temperatures", r.cfg.TemperaturesEvery, r.sendTemperatures)
+	go r.loop(ctx, &wg, "commands", r.cfg.CommandsEvery, r.runCommand)
 	wg.Wait()
 	return ctx.Err()
 }
@@ -44,7 +47,13 @@ func (r *Runner) Once(ctx context.Context) error {
 	if err := r.sendMetrics(ctx); err != nil {
 		return err
 	}
-	return r.sendDevices(ctx)
+	if err := r.sendDevices(ctx); err != nil {
+		return err
+	}
+	if err := r.sendHardware(ctx); err != nil {
+		return err
+	}
+	return r.sendTemperatures(ctx)
 }
 
 func (r *Runner) loop(ctx context.Context, wg *sync.WaitGroup, name string, interval time.Duration, fn func(context.Context) error) {
@@ -76,4 +85,21 @@ func (r *Runner) sendMetrics(ctx context.Context) error {
 
 func (r *Runner) sendDevices(ctx context.Context) error {
 	return r.client.SendDevices(ctx, r.collector.Devices(ctx))
+}
+
+func (r *Runner) sendHardware(ctx context.Context) error {
+	return r.client.SendHardware(ctx, r.collector.Hardware(ctx))
+}
+
+func (r *Runner) sendTemperatures(ctx context.Context) error {
+	return r.client.SendTemperatures(ctx, r.collector.Temperatures(ctx))
+}
+
+func (r *Runner) runCommand(ctx context.Context) error {
+	command, err := r.client.PollCommand(ctx)
+	if err != nil || command == nil {
+		return err
+	}
+	result := executeRemoteCommand(ctx, *command)
+	return r.client.SendCommandResult(ctx, command.ID, result)
 }

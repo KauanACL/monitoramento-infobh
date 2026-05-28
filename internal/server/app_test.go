@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -165,6 +166,164 @@ func TestOfflineStatusAndRetention(t *testing.T) {
 	}
 }
 
+func TestAlertSettingsHardwareTemperaturesAndLiveEndpoint(t *testing.T) {
+	store := testStore(t)
+	clientID, err := store.CreateClient(context.Background(), "Cliente C", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	machine, token, err := store.CreateMachine(context.Background(), clientID, "Design-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SaveAlertSettings(context.Background(), AlertSettings{
+		CPUPercent:     70,
+		RAMPercent:     75,
+		StoragePercent: 80,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	app := NewApp(store, Config{RetentionDays: 30}, slog.New(slog.NewTextHandler(os.Stdout, nil)))
+	server := httptest.NewServer(app.Routes())
+	defer server.Close()
+
+	postAgent(t, server.URL+"/api/agent/metrics", token, AgentMetricPayload{
+		CollectedAt:    time.Now().UTC().Format(time.RFC3339Nano),
+		CPUPercent:     72,
+		RAMTotalBytes:  16 << 30,
+		RAMUsedBytes:   13 << 30,
+		RAMPercent:     81,
+		InternetOnline: true,
+		Disks: []AgentDisk{{
+			Name:        "C:",
+			MountPoint:  "C:\\",
+			FileSystem:  "NTFS",
+			TotalBytes:  512 << 30,
+			UsedBytes:   420 << 30,
+			FreeBytes:   92 << 30,
+			UsedPercent: 82,
+		}},
+	})
+	postAgent(t, server.URL+"/api/agent/hardware", token, AgentHardwarePayload{
+		CollectedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		CPU: AgentCPUInfo{
+			Name:              "Intel Core Test",
+			Manufacturer:      "Intel",
+			Cores:             6,
+			LogicalProcessors: 12,
+			MaxClockMHz:       4200,
+		},
+		RAMModules: []RAMModule{{
+			Slot:          "DIMM 1",
+			CapacityBytes: 8 << 30,
+			Manufacturer:  "Kingston",
+			MemoryType:    "DDR4",
+			SpeedMHz:      3200,
+		}},
+	})
+	postAgent(t, server.URL+"/api/agent/temperatures", token, AgentTemperaturePayload{
+		CollectedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		Available:   true,
+		Readings: []AgentTemperatureReading{{
+			Name:           "Thermal Zone",
+			SensorType:     "thermal_zone",
+			CurrentCelsius: 44.5,
+			Source:         "MSAcpi_ThermalZoneTemperature",
+		}},
+	})
+
+	machines, err := store.ListMachines(context.Background(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(machines[0].Alerts, ","); !strings.Contains(got, "CPU alta") || !strings.Contains(got, "RAM alta") || !strings.Contains(got, "armazenamento alto") {
+		t.Fatalf("expected configured alerts, got %q", got)
+	}
+	detail, err := store.MachineDetail(context.Background(), machine.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Hardware == nil || detail.Hardware.CPUName != "Intel Core Test" || len(detail.Hardware.RAMModules) != 1 {
+		t.Fatalf("unexpected hardware: %#v", detail.Hardware)
+	}
+	if !detail.Temperatures.Available || len(detail.Temperatures.Readings) != 1 {
+		t.Fatalf("unexpected temperatures: %#v", detail.Temperatures)
+	}
+
+	resp, err := http.Get(server.URL + "/api/machines/" + strconvFormat(machine.ID) + "/live")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected live endpoint 200, got %d", resp.StatusCode)
+	}
+	var live map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&live); err != nil {
+		t.Fatal(err)
+	}
+	if live["detail"] == nil {
+		t.Fatalf("expected detail in live payload: %#v", live)
+	}
+}
+
+func TestActionPINCreatesAndCompletesCacheCommand(t *testing.T) {
+	store := testStore(t)
+	clientID, err := store.CreateClient(context.Background(), "Cliente D", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	machine, token, err := store.CreateMachine(context.Background(), clientID, "Financeiro-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	app := NewApp(store, Config{RetentionDays: 30}, slog.New(slog.NewTextHandler(os.Stdout, nil)))
+	server := httptest.NewServer(app.Routes())
+	defer server.Close()
+
+	settingsResp, err := http.Get(server.URL + "/settings/alerts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settingsResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected settings page 200, got %d", settingsResp.StatusCode)
+	}
+	_ = settingsResp.Body.Close()
+
+	resp := postForm(t, server.URL+"/machines/"+strconvFormat(machine.ID)+"/commands/cache-clean", "pin=0000")
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected forbidden for wrong pin, got %d", resp.StatusCode)
+	}
+	_ = resp.Body.Close()
+
+	resp = postForm(t, server.URL+"/machines/"+strconvFormat(machine.ID)+"/commands/cache-clean", "pin=110680")
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected redirect after command creation, got %d", resp.StatusCode)
+	}
+	_ = resp.Body.Close()
+
+	var poll AgentCommandPollResponse
+	postAgentDecode(t, server.URL+"/api/agent/commands/poll", token, map[string]any{}, &poll)
+	if poll.Command == nil || poll.Command.Type != "cache_clean" {
+		t.Fatalf("expected cache_clean command, got %#v", poll.Command)
+	}
+	postAgent(t, server.URL+"/api/agent/commands/"+strconvFormat(poll.Command.ID)+"/result", token, AgentCommandResultPayload{
+		Status:       "succeeded",
+		Message:      "Limpeza concluida",
+		RemovedBytes: 1024,
+	})
+
+	detail, err := store.MachineDetail(context.Background(), machine.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Commands) != 1 || detail.Commands[0].Status != "succeeded" {
+		t.Fatalf("expected completed command, got %#v", detail.Commands)
+	}
+}
+
 func testStore(t *testing.T) *Store {
 	t.Helper()
 	store, err := OpenStore(filepath.Join(t.TempDir(), "monitoramento.db"))
@@ -177,7 +336,29 @@ func testStore(t *testing.T) *Store {
 	return store
 }
 
+func postForm(t *testing.T, url, form string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(form))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
 func postAgent(t *testing.T, url, token string, payload any) {
+	t.Helper()
+	postAgentDecode(t, url, token, payload, nil)
+}
+
+func postAgentDecode(t *testing.T, url, token string, payload any, dest any) {
 	t.Helper()
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -197,4 +378,13 @@ func postAgent(t *testing.T, url, token string, payload any) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		t.Fatalf("unexpected status %d", resp.StatusCode)
 	}
+	if dest != nil {
+		if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func strconvFormat(value int64) string {
+	return strconv.FormatInt(value, 10)
 }

@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -159,6 +160,69 @@ CREATE TABLE IF NOT EXISTS events (
 	created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_events_machine_created ON events(machine_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS alert_settings (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	cpu_percent REAL NOT NULL DEFAULT 85,
+	ram_percent REAL NOT NULL DEFAULT 85,
+	storage_percent REAL NOT NULL DEFAULT 90,
+	updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS hardware_inventory (
+	machine_id INTEGER PRIMARY KEY REFERENCES machines(id) ON DELETE CASCADE,
+	collected_at TEXT NOT NULL,
+	cpu_name TEXT NOT NULL DEFAULT '',
+	cpu_manufacturer TEXT NOT NULL DEFAULT '',
+	cpu_cores INTEGER NOT NULL DEFAULT 0,
+	cpu_logical_processors INTEGER NOT NULL DEFAULT 0,
+	cpu_max_clock_mhz INTEGER NOT NULL DEFAULT 0,
+	cpu_processor_id TEXT NOT NULL DEFAULT '',
+	system_manufacturer TEXT NOT NULL DEFAULT '',
+	system_model TEXT NOT NULL DEFAULT '',
+	baseboard_manufacturer TEXT NOT NULL DEFAULT '',
+	baseboard_product TEXT NOT NULL DEFAULT '',
+	bios_version TEXT NOT NULL DEFAULT '',
+	ram_modules_json TEXT NOT NULL DEFAULT '[]',
+	created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+	updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS temperature_reports (
+	machine_id INTEGER PRIMARY KEY REFERENCES machines(id) ON DELETE CASCADE,
+	collected_at TEXT NOT NULL,
+	available INTEGER NOT NULL DEFAULT 0,
+	message TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS temperature_snapshots (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	machine_id INTEGER NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+	collected_at TEXT NOT NULL,
+	name TEXT NOT NULL,
+	sensor_type TEXT NOT NULL DEFAULT '',
+	current_celsius REAL NOT NULL DEFAULT 0,
+	source TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_temperatures_machine_collected ON temperature_snapshots(machine_id, collected_at DESC);
+CREATE INDEX IF NOT EXISTS idx_temperatures_created ON temperature_snapshots(created_at);
+
+CREATE TABLE IF NOT EXISTS agent_commands (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	machine_id INTEGER NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+	command_type TEXT NOT NULL,
+	status TEXT NOT NULL DEFAULT 'pending',
+	request_payload TEXT NOT NULL DEFAULT '{}',
+	result_message TEXT NOT NULL DEFAULT '',
+	error_message TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	claimed_at TEXT,
+	completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_agent_commands_machine_status ON agent_commands(machine_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_agent_commands_created ON agent_commands(created_at);
 `
 	_, err := s.db.ExecContext(ctx, schema)
 	return err
@@ -171,8 +235,10 @@ func (s *Store) Cleanup(ctx context.Context, retentionDays int) error {
 	cutoff := time.Now().UTC().AddDate(0, 0, -retentionDays).Format(time.RFC3339Nano)
 	queries := []string{
 		"DELETE FROM metric_snapshots WHERE created_at < ?",
+		"DELETE FROM temperature_snapshots WHERE created_at < ?",
 		"DELETE FROM device_events WHERE created_at < ?",
 		"DELETE FROM events WHERE created_at < ?",
+		"DELETE FROM agent_commands WHERE created_at < ? AND status IN ('succeeded', 'failed')",
 	}
 	for _, query := range queries {
 		if _, err := s.db.ExecContext(ctx, query, cutoff); err != nil {
@@ -494,6 +560,237 @@ VALUES (?, ?, ?, ?, ?, 'disconnected', ?)`,
 	return tx.Commit()
 }
 
+func (s *Store) AlertSettings(ctx context.Context) (AlertSettings, error) {
+	settings := defaultAlertSettings()
+	row := s.db.QueryRowContext(ctx, `
+SELECT cpu_percent, ram_percent, storage_percent, updated_at
+FROM alert_settings
+WHERE id = 1`)
+	var updated string
+	err := row.Scan(&settings.CPUPercent, &settings.RAMPercent, &settings.StoragePercent, &updated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return settings, nil
+	}
+	if err != nil {
+		return AlertSettings{}, err
+	}
+	settings.CPUPercent = normalizeThreshold(settings.CPUPercent, defaultAlertSettings().CPUPercent)
+	settings.RAMPercent = normalizeThreshold(settings.RAMPercent, defaultAlertSettings().RAMPercent)
+	settings.StoragePercent = normalizeThreshold(settings.StoragePercent, defaultAlertSettings().StoragePercent)
+	settings.UpdatedAt = parseDBTime(updated)
+	return settings, nil
+}
+
+func (s *Store) SaveAlertSettings(ctx context.Context, settings AlertSettings) (AlertSettings, error) {
+	settings.CPUPercent = normalizeThreshold(settings.CPUPercent, defaultAlertSettings().CPUPercent)
+	settings.RAMPercent = normalizeThreshold(settings.RAMPercent, defaultAlertSettings().RAMPercent)
+	settings.StoragePercent = normalizeThreshold(settings.StoragePercent, defaultAlertSettings().StoragePercent)
+	updatedAt := nowString()
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO alert_settings (id, cpu_percent, ram_percent, storage_percent, updated_at)
+VALUES (1, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+	cpu_percent = excluded.cpu_percent,
+	ram_percent = excluded.ram_percent,
+	storage_percent = excluded.storage_percent,
+	updated_at = excluded.updated_at`,
+		settings.CPUPercent, settings.RAMPercent, settings.StoragePercent, updatedAt)
+	if err != nil {
+		return AlertSettings{}, err
+	}
+	settings.UpdatedAt = parseDBTime(updatedAt)
+	return settings, nil
+}
+
+func (s *Store) RecordHardware(ctx context.Context, machineID int64, payload AgentHardwarePayload) error {
+	collectedAt := parseAgentTime(payload.CollectedAt)
+	ramJSON, err := json.Marshal(payload.RAMModules)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `
+INSERT INTO hardware_inventory
+	(machine_id, collected_at, cpu_name, cpu_manufacturer, cpu_cores, cpu_logical_processors,
+	 cpu_max_clock_mhz, cpu_processor_id, system_manufacturer, system_model, baseboard_manufacturer,
+	 baseboard_product, bios_version, ram_modules_json, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(machine_id) DO UPDATE SET
+	collected_at = excluded.collected_at,
+	cpu_name = excluded.cpu_name,
+	cpu_manufacturer = excluded.cpu_manufacturer,
+	cpu_cores = excluded.cpu_cores,
+	cpu_logical_processors = excluded.cpu_logical_processors,
+	cpu_max_clock_mhz = excluded.cpu_max_clock_mhz,
+	cpu_processor_id = excluded.cpu_processor_id,
+	system_manufacturer = excluded.system_manufacturer,
+	system_model = excluded.system_model,
+	baseboard_manufacturer = excluded.baseboard_manufacturer,
+	baseboard_product = excluded.baseboard_product,
+	bios_version = excluded.bios_version,
+	ram_modules_json = excluded.ram_modules_json,
+	updated_at = excluded.updated_at`,
+		machineID, collectedAt.Format(time.RFC3339Nano), strings.TrimSpace(payload.CPU.Name),
+		strings.TrimSpace(payload.CPU.Manufacturer), payload.CPU.Cores, payload.CPU.LogicalProcessors,
+		payload.CPU.MaxClockMHz, strings.TrimSpace(payload.CPU.ProcessorID), strings.TrimSpace(payload.System.Manufacturer),
+		strings.TrimSpace(payload.System.Model), strings.TrimSpace(payload.System.BaseboardManufacturer),
+		strings.TrimSpace(payload.System.BaseboardProduct), strings.TrimSpace(payload.System.BIOSVersion),
+		string(ramJSON), nowString())
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, "UPDATE machines SET last_seen_at = ?, updated_at = ? WHERE id = ?",
+		collectedAt.Format(time.RFC3339Nano), nowString(), machineID)
+	return err
+}
+
+func (s *Store) RecordTemperatures(ctx context.Context, machineID int64, payload AgentTemperaturePayload) error {
+	collectedAt := parseAgentTime(payload.CollectedAt)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	available := payload.Available && len(payload.Readings) > 0
+	message := strings.TrimSpace(payload.Message)
+	if !available && message == "" {
+		message = "Sensores nativos indisponiveis"
+	}
+	_, err = tx.ExecContext(ctx, `
+INSERT INTO temperature_reports (machine_id, collected_at, available, message, updated_at)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(machine_id) DO UPDATE SET
+	collected_at = excluded.collected_at,
+	available = excluded.available,
+	message = excluded.message,
+	updated_at = excluded.updated_at`,
+		machineID, collectedAt.Format(time.RFC3339Nano), boolInt(available), message, nowString())
+	if err != nil {
+		return err
+	}
+	for _, reading := range payload.Readings {
+		name := strings.TrimSpace(reading.Name)
+		if name == "" {
+			continue
+		}
+		_, err = tx.ExecContext(ctx, `
+INSERT INTO temperature_snapshots
+	(machine_id, collected_at, name, sensor_type, current_celsius, source)
+VALUES (?, ?, ?, ?, ?, ?)`,
+			machineID, collectedAt.Format(time.RFC3339Nano), name, strings.TrimSpace(reading.SensorType),
+			reading.CurrentCelsius, strings.TrimSpace(reading.Source))
+		if err != nil {
+			return err
+		}
+	}
+	_, err = tx.ExecContext(ctx, "UPDATE machines SET last_seen_at = ?, updated_at = ? WHERE id = ?",
+		collectedAt.Format(time.RFC3339Nano), nowString(), machineID)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) CreateCacheCleanCommand(ctx context.Context, machineID int64) (AgentCommand, error) {
+	payload := `{"scope":"safe_temp"}`
+	now := nowString()
+	res, err := s.db.ExecContext(ctx, `
+INSERT INTO agent_commands (machine_id, command_type, status, request_payload, created_at)
+VALUES (?, 'cache_clean', 'pending', ?, ?)`, machineID, payload, now)
+	if err != nil {
+		return AgentCommand{}, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return AgentCommand{}, err
+	}
+	_ = s.addEvent(ctx, machineID, "info", "command_created", "Limpeza de temporarios solicitada", "")
+	return s.getCommand(ctx, machineID, id)
+}
+
+func (s *Store) ClaimNextCommand(ctx context.Context, machineID int64) (*AgentCommand, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	var id int64
+	err = tx.QueryRowContext(ctx, `
+SELECT id
+FROM agent_commands
+WHERE machine_id = ? AND status = 'pending'
+ORDER BY created_at ASC
+LIMIT 1`, machineID).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, tx.Commit()
+	}
+	if err != nil {
+		return nil, err
+	}
+	claimedAt := nowString()
+	res, err := tx.ExecContext(ctx, `
+UPDATE agent_commands
+SET status = 'running', claimed_at = ?
+WHERE id = ? AND machine_id = ? AND status = 'pending'`, claimedAt, id, machineID)
+	if err != nil {
+		return nil, err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if affected == 0 {
+		return nil, tx.Commit()
+	}
+	command, err := scanCommand(tx.QueryRowContext(ctx, `
+SELECT id, machine_id, command_type, status, request_payload, result_message, error_message,
+       created_at, claimed_at, completed_at
+FROM agent_commands
+WHERE id = ? AND machine_id = ?`, id, machineID))
+	if err != nil {
+		return nil, err
+	}
+	return &command, tx.Commit()
+}
+
+func (s *Store) RecordCommandResult(ctx context.Context, machineID, commandID int64, payload AgentCommandResultPayload) error {
+	status := strings.ToLower(strings.TrimSpace(payload.Status))
+	if status != "succeeded" && status != "failed" {
+		status = "failed"
+	}
+	message := strings.TrimSpace(payload.Message)
+	if payload.RemovedBytes > 0 {
+		message = strings.TrimSpace(message + " (" + formatBytes(payload.RemovedBytes) + " removidos)")
+	}
+	if len(payload.Details) > 0 {
+		message = strings.TrimSpace(message + " " + strings.Join(payload.Details, " | "))
+	}
+	completedAt := nowString()
+	res, err := s.db.ExecContext(ctx, `
+UPDATE agent_commands
+SET status = ?, result_message = ?, error_message = ?, completed_at = ?
+WHERE id = ? AND machine_id = ?`,
+		status, message, strings.TrimSpace(payload.Error), completedAt, commandID, machineID)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	severity := "info"
+	eventMessage := "Limpeza de temporarios concluida"
+	if status == "failed" {
+		severity = "error"
+		eventMessage = "Limpeza de temporarios falhou"
+	}
+	return s.addEvent(ctx, machineID, severity, "command_result", eventMessage, strings.TrimSpace(payload.Error))
+}
+
 func (s *Store) Dashboard(ctx context.Context) (DashboardData, error) {
 	clients, err := s.ListClients(ctx)
 	if err != nil {
@@ -567,6 +864,10 @@ func (s *Store) ListClients(ctx context.Context) ([]ClientOverview, error) {
 }
 
 func (s *Store) ListMachines(ctx context.Context, clientID int64) ([]MachineOverview, error) {
+	settings, err := s.AlertSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
 	query := `
 SELECT m.id, m.client_id, c.name, m.name, m.hostname, m.token_hint, m.agent_version, m.os_name,
        m.ip_address, m.internet_online, m.last_seen_at, m.created_at, m.updated_at,
@@ -600,7 +901,7 @@ ORDER BY c.name, m.name`
 			}
 			overview.Disks = disks
 		}
-		overview.Alerts = buildAlerts(overview)
+		overview.Alerts = buildAlerts(overview, settings)
 		overview.AlertLevel = alertLevel(overview.Alerts)
 		machines = append(machines, overview)
 	}
@@ -639,12 +940,32 @@ func (s *Store) MachineDetail(ctx context.Context, id int64) (MachineDetail, err
 	if err != nil {
 		return MachineDetail{}, err
 	}
+	settings, err := s.AlertSettings(ctx)
+	if err != nil {
+		return MachineDetail{}, err
+	}
+	hardware, err := s.hardwareInventory(ctx, id)
+	if err != nil {
+		return MachineDetail{}, err
+	}
+	temperatures, err := s.temperatureStatus(ctx, id)
+	if err != nil {
+		return MachineDetail{}, err
+	}
+	commands, err := s.recentCommands(ctx, id, 10)
+	if err != nil {
+		return MachineDetail{}, err
+	}
 	return MachineDetail{
 		MachineOverview: overview,
 		Client:          client,
 		History:         history,
 		Devices:         devices,
 		Events:          events,
+		Settings:        settings,
+		Hardware:        hardware,
+		Temperatures:    temperatures,
+		Commands:        commands,
 	}, nil
 }
 
@@ -727,6 +1048,113 @@ LIMIT ?`, machineID, machineID, limit)
 		events = append(events, e)
 	}
 	return events, rows.Err()
+}
+
+func (s *Store) hardwareInventory(ctx context.Context, machineID int64) (*HardwareInventory, error) {
+	row := s.db.QueryRowContext(ctx, `
+SELECT machine_id, collected_at, cpu_name, cpu_manufacturer, cpu_cores, cpu_logical_processors,
+       cpu_max_clock_mhz, cpu_processor_id, system_manufacturer, system_model, baseboard_manufacturer,
+       baseboard_product, bios_version, ram_modules_json
+FROM hardware_inventory
+WHERE machine_id = ?`, machineID)
+	var h HardwareInventory
+	var collected string
+	var ramJSON string
+	err := row.Scan(&h.MachineID, &collected, &h.CPUName, &h.CPUManufacturer, &h.CPUCores,
+		&h.CPULogicalProcessors, &h.CPUMaxClockMHz, &h.CPUProcessorID, &h.SystemManufacturer,
+		&h.SystemModel, &h.BaseboardManufacturer, &h.BaseboardProduct, &h.BIOSVersion, &ramJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	h.CollectedAt = parseDBTime(collected)
+	if strings.TrimSpace(ramJSON) != "" {
+		_ = json.Unmarshal([]byte(ramJSON), &h.RAMModules)
+	}
+	return &h, nil
+}
+
+func (s *Store) temperatureStatus(ctx context.Context, machineID int64) (TemperatureStatus, error) {
+	row := s.db.QueryRowContext(ctx, `
+SELECT collected_at, available, message
+FROM temperature_reports
+WHERE machine_id = ?`, machineID)
+	var status TemperatureStatus
+	var collected string
+	var available int
+	err := row.Scan(&collected, &available, &status.Message)
+	if errors.Is(err, sql.ErrNoRows) {
+		return TemperatureStatus{Available: false, Message: "Aguardando coleta de temperatura"}, nil
+	}
+	if err != nil {
+		return TemperatureStatus{}, err
+	}
+	status.CollectedAt = parseDBTime(collected)
+	status.Available = available == 1
+	if status.Available {
+		rows, err := s.db.QueryContext(ctx, `
+SELECT id, machine_id, collected_at, name, sensor_type, current_celsius, source
+FROM temperature_snapshots
+WHERE machine_id = ? AND collected_at = ?
+ORDER BY name`, machineID, collected)
+		if err != nil {
+			return TemperatureStatus{}, err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var reading TemperatureReading
+			var readingCollected string
+			if err := rows.Scan(&reading.ID, &reading.MachineID, &readingCollected, &reading.Name,
+				&reading.SensorType, &reading.CurrentCelsius, &reading.Source); err != nil {
+				return TemperatureStatus{}, err
+			}
+			reading.CollectedAt = parseDBTime(readingCollected)
+			status.Readings = append(status.Readings, reading)
+		}
+		if err := rows.Err(); err != nil {
+			return TemperatureStatus{}, err
+		}
+		if len(status.Readings) == 0 {
+			status.Available = false
+			if status.Message == "" {
+				status.Message = "Sensores nativos indisponiveis"
+			}
+		}
+	}
+	return status, nil
+}
+
+func (s *Store) recentCommands(ctx context.Context, machineID int64, limit int) ([]AgentCommand, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, machine_id, command_type, status, request_payload, result_message, error_message,
+       created_at, claimed_at, completed_at
+FROM agent_commands
+WHERE machine_id = ?
+ORDER BY created_at DESC
+LIMIT ?`, machineID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var commands []AgentCommand
+	for rows.Next() {
+		command, err := scanCommand(rows)
+		if err != nil {
+			return nil, err
+		}
+		commands = append(commands, command)
+	}
+	return commands, rows.Err()
+}
+
+func (s *Store) getCommand(ctx context.Context, machineID, commandID int64) (AgentCommand, error) {
+	return scanCommand(s.db.QueryRowContext(ctx, `
+SELECT id, machine_id, command_type, status, request_payload, result_message, error_message,
+       created_at, claimed_at, completed_at
+FROM agent_commands
+WHERE id = ? AND machine_id = ?`, commandID, machineID))
 }
 
 func (s *Store) listDisksForMetric(ctx context.Context, metricID int64) ([]Disk, error) {
@@ -840,16 +1268,38 @@ func scanMetric(row rowScanner) (Metric, error) {
 	return metric, nil
 }
 
-func buildAlerts(machine MachineOverview) []string {
+func scanCommand(row rowScanner) (AgentCommand, error) {
+	var command AgentCommand
+	var created string
+	var claimed, completed sql.NullString
+	err := row.Scan(&command.ID, &command.MachineID, &command.Type, &command.Status,
+		&command.RequestPayload, &command.ResultMessage, &command.ErrorMessage,
+		&created, &claimed, &completed)
+	if err != nil {
+		return AgentCommand{}, err
+	}
+	command.CreatedAt = parseDBTime(created)
+	if claimed.Valid && claimed.String != "" {
+		t := parseDBTime(claimed.String)
+		command.ClaimedAt = &t
+	}
+	if completed.Valid && completed.String != "" {
+		t := parseDBTime(completed.String)
+		command.CompletedAt = &t
+	}
+	return command, nil
+}
+
+func buildAlerts(machine MachineOverview, settings AlertSettings) []string {
 	var alerts []string
 	if !machine.Online {
 		alerts = append(alerts, "offline")
 	}
 	if machine.LastMetric != nil {
-		if machine.LastMetric.CPUPercent >= 85 {
+		if machine.LastMetric.CPUPercent >= settings.CPUPercent {
 			alerts = append(alerts, "CPU alta")
 		}
-		if machine.LastMetric.RAMPercent >= 90 {
+		if machine.LastMetric.RAMPercent >= settings.RAMPercent {
 			alerts = append(alerts, "RAM alta")
 		}
 		if !machine.LastMetric.InternetOnline {
@@ -857,8 +1307,8 @@ func buildAlerts(machine MachineOverview) []string {
 		}
 	}
 	for _, disk := range machine.Disks {
-		if disk.UsedPercent >= 90 {
-			alerts = append(alerts, "disco cheio")
+		if disk.UsedPercent >= settings.StoragePercent {
+			alerts = append(alerts, "armazenamento alto")
 			break
 		}
 	}
@@ -870,11 +1320,29 @@ func alertLevel(alerts []string) string {
 		return "ok"
 	}
 	for _, alert := range alerts {
-		if alert == "offline" || alert == "disco cheio" {
+		if alert == "offline" {
 			return "critical"
 		}
 	}
 	return "warning"
+}
+
+func defaultAlertSettings() AlertSettings {
+	return AlertSettings{
+		CPUPercent:     85,
+		RAMPercent:     85,
+		StoragePercent: 90,
+	}
+}
+
+func normalizeThreshold(value, fallback float64) float64 {
+	if value <= 0 {
+		return fallback
+	}
+	if value > 100 {
+		return 100
+	}
+	return value
 }
 
 func parseAgentTime(value string) time.Time {

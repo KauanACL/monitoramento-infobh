@@ -11,6 +11,7 @@ WorkingDirectory=/opt/monitoramento-infobh
 Environment=MONITOR_ADDR=:8080
 Environment=MONITOR_DB_PATH=/opt/monitoramento-infobh/data/monitoramento.db
 Environment=MONITOR_RETENTION_DAYS=30
+# PIN de acao padrao do sistema: 110680
 ExecStart=/opt/monitoramento-infobh/monitor-server
 Restart=always
 RestartSec=5

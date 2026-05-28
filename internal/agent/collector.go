@@ -63,6 +63,26 @@ func (c *Collector) Devices(ctx context.Context) devicePayload {
 	}
 }
 
+func (c *Collector) Hardware(ctx context.Context) hardwarePayload {
+	cpu, system, modules := collectHardware(ctx)
+	return hardwarePayload{
+		CollectedAt: nowRFC3339(),
+		CPU:         cpu,
+		System:      system,
+		RAMModules:  modules,
+	}
+}
+
+func (c *Collector) Temperatures(ctx context.Context) temperaturePayload {
+	readings, message := collectTemperatures(ctx)
+	return temperaturePayload{
+		CollectedAt: nowRFC3339(),
+		Available:   len(readings) > 0,
+		Message:     message,
+		Readings:    readings,
+	}
+}
+
 func collectDisks(ctx context.Context) []diskPayload {
 	partitions, err := disk.PartitionsWithContext(ctx, false)
 	if err != nil {

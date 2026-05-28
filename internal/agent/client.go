@@ -38,7 +38,31 @@ func (c *Client) SendDevices(ctx context.Context, payload devicePayload) error {
 	return c.post(ctx, "/api/agent/devices", payload)
 }
 
+func (c *Client) SendHardware(ctx context.Context, payload hardwarePayload) error {
+	return c.post(ctx, "/api/agent/hardware", payload)
+}
+
+func (c *Client) SendTemperatures(ctx context.Context, payload temperaturePayload) error {
+	return c.post(ctx, "/api/agent/temperatures", payload)
+}
+
+func (c *Client) PollCommand(ctx context.Context) (*remoteCommand, error) {
+	var response commandPollResponse
+	if err := c.postDecode(ctx, "/api/agent/commands/poll", map[string]any{}, &response); err != nil {
+		return nil, err
+	}
+	return response.Command, nil
+}
+
+func (c *Client) SendCommandResult(ctx context.Context, commandID int64, payload commandResultPayload) error {
+	return c.post(ctx, fmt.Sprintf("/api/agent/commands/%d/result", commandID), payload)
+}
+
 func (c *Client) post(ctx context.Context, path string, payload any) error {
+	return c.postDecode(ctx, path, payload, nil)
+}
+
+func (c *Client) postDecode(ctx context.Context, path string, payload any, dest any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -58,6 +82,11 @@ func (c *Client) post(ctx context.Context, path string, payload any) error {
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("server returned %s", resp.Status)
+	}
+	if dest != nil {
+		if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
+			return err
+		}
 	}
 	return nil
 }

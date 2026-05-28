@@ -8,6 +8,7 @@ Sistema em Go para monitorar máquinas Windows de clientes usando uma VM Ubuntu 
 - `cmd/agent`: agente Windows instalável como serviço.
 - SQLite em WAL no caminho `data/monitoramento.db`.
 - Retenção padrão de 30 dias para métricas detalhadas, eventos e eventos de dispositivos.
+- Alertas globais configuráveis para CPU, RAM e armazenamento.
 
 ## Rodar localmente
 
@@ -115,20 +116,25 @@ sc query InfoBHMonitorAgent
 - Heartbeat: a cada 30 segundos.
 - Métricas: a cada 60 segundos.
 - Dispositivos: a cada 5 minutos.
+- Hardware: ao iniciar e depois a cada 6 horas.
+- Temperaturas nativas: a cada 60 segundos, quando o Windows expuser sensores.
+- Comandos remotos: agente busca comandos a cada 15 segundos.
 - Offline: máquina sem heartbeat por mais de 2 minutos.
 
 O agente coleta:
 
 - CPU.
-- RAM.
+- RAM e slots quando o Windows informar.
 - discos/SSD/HD e armazenamento, incluindo total, usado, livre e percentual usado.
 - internet/conectividade.
 - dispositivos USB.
 - impressoras.
+- inventário de CPU, placa/sistema e módulos de memória.
+- temperaturas nativas via WMI/CIM quando disponíveis.
 
 ## Segurança
 
-O dashboard foi implementado sem login, conforme definido no plano. Se a porta `8080` estiver aberta na internet, qualquer pessoa com o IP acessa os dados. Os endpoints dos agentes exigem token por máquina.
+O dashboard foi implementado sem login, conforme definido no plano. Se a porta `8080` estiver aberta na internet, qualquer pessoa com o IP acessa os dados. Os endpoints dos agentes exigem token por máquina. Ações que alteram estado, como salvar limites de alerta e limpar temporários no Windows, usam o PIN fixo `110680`.
 
 Para produção, o recomendado é colocar firewall por IP, VPN ou migrar o dashboard para HTTPS com autenticação.
 

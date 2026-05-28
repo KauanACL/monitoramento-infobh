@@ -1,0 +1,46 @@
+{{define "content"}}
+<header class="page-head">
+  <div>
+    <h1>Alertas</h1>
+    <p>Limites globais para CPU, RAM e armazenamento.</p>
+  </div>
+</header>
+
+{{if .Flash}}<p class="notice">{{.Flash}}</p>{{end}}
+{{if not .ActionPINEnabled}}<p class="notice error">PIN de ação indisponível.</p>{{end}}
+
+<section class="split-layout">
+  <form class="form-panel" method="post" action="/settings/alerts">
+    <h2>Limites globais</h2>
+    <label>
+      CPU (%)
+      <input type="number" min="1" max="100" step="1" name="cpu_percent" value="{{pctValue .Settings.CPUPercent}}" inputmode="numeric" {{if not .ActionPINEnabled}}disabled{{end}}>
+    </label>
+    <label>
+      RAM (%)
+      <input type="number" min="1" max="100" step="1" name="ram_percent" value="{{pctValue .Settings.RAMPercent}}" inputmode="numeric" {{if not .ActionPINEnabled}}disabled{{end}}>
+    </label>
+    <label>
+      Armazenamento (%)
+      <input type="number" min="1" max="100" step="1" name="storage_percent" value="{{pctValue .Settings.StoragePercent}}" inputmode="numeric" {{if not .ActionPINEnabled}}disabled{{end}}>
+    </label>
+    <label>
+      PIN de ação
+      <input type="password" name="pin" autocomplete="off" {{if not .ActionPINEnabled}}disabled{{end}}>
+    </label>
+    <button class="button" type="submit" {{if not .ActionPINEnabled}}disabled{{end}}>Salvar alertas</button>
+  </form>
+
+  <article class="list-panel">
+    <div class="section-title">
+      <h2>Valores atuais</h2>
+      {{if .Settings.UpdatedAt.IsZero}}<span>padrão</span>{{else}}<span>alterado {{clock .Settings.UpdatedAt}}</span>{{end}}
+    </div>
+    <div class="settings-summary">
+      <div><span>CPU</span><strong>{{pct .Settings.CPUPercent}}</strong></div>
+      <div><span>RAM</span><strong>{{pct .Settings.RAMPercent}}</strong></div>
+      <div><span>Armazenamento</span><strong>{{pct .Settings.StoragePercent}}</strong></div>
+    </div>
+  </article>
+</section>
+{{end}}

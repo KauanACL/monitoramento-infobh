@@ -17,6 +17,7 @@ func RunCommand() {
 		Addr:          envAddr(),
 		DBPath:        envString("MONITOR_DB_PATH", DefaultDBPath),
 		RetentionDays: envInt("MONITOR_RETENTION_DAYS", DefaultRetentionDays),
+		ActionPIN:     envString("MONITOR_ACTION_PIN", DefaultActionPIN),
 	}
 
 	flag.StringVar(&cfg.Addr, "addr", cfg.Addr, "endereco HTTP do dashboard e API")

@@ -20,6 +20,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html {
   min-height: 100%;
   background: var(--bg);
@@ -218,6 +222,13 @@ textarea {
   background: var(--accent-dark);
   border-color: var(--accent-dark);
   outline: none;
+}
+
+.button:disabled,
+button:disabled,
+input:disabled {
+  cursor: not-allowed;
+  opacity: .58;
 }
 
 .button-secondary {
@@ -471,6 +482,33 @@ tbody tr:hover {
   font-weight: 720;
 }
 
+.machine-alerts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.machine-alerts span,
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(207, 63, 63, .20);
+  background: rgba(207, 63, 63, .08);
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.machine-alerts span.ok {
+  border-color: rgba(21, 153, 87, .22);
+  background: rgba(21, 153, 87, .10);
+  color: var(--good);
+}
+
 .ok-text {
   color: var(--good);
   font-weight: 720;
@@ -613,6 +651,29 @@ textarea {
   gap: 12px;
 }
 
+.device-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -4px 0 16px;
+}
+
+.filter-chip {
+  border-color: var(--border);
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.filter-chip:hover,
+.filter-chip:focus-visible,
+.filter-chip.active {
+  border-color: rgba(15, 139, 141, .45);
+  background: rgba(15, 139, 141, .10);
+  color: var(--accent-dark);
+  outline: none;
+}
+
 .device-card {
   display: flex;
   align-items: center;
@@ -666,6 +727,136 @@ textarea {
 .event-list {
   display: grid;
   gap: 10px;
+}
+
+.hardware-block {
+  display: grid;
+  gap: 14px;
+}
+
+.hardware-block h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.hardware-block dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.hardware-block dl div,
+.ram-module,
+.temperature-card,
+.command-row,
+.settings-summary div {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.hardware-block dl div {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.hardware-block dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.hardware-block dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+
+.ram-module-list,
+.temperature-grid,
+.command-list,
+.settings-summary {
+  display: grid;
+  gap: 10px;
+}
+
+.ram-module {
+  padding: 12px;
+}
+
+.temperature-grid {
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+
+.temperature-card {
+  padding: 14px;
+}
+
+.temperature-card span,
+.settings-summary span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.temperature-card strong,
+.settings-summary strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.inline-action-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 16px;
+}
+
+.command-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 12px;
+  padding: 12px;
+}
+
+.command-row span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.command-row small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+
+.command-row.succeeded span {
+  color: var(--good);
+}
+
+.command-row.failed span {
+  color: var(--danger);
+}
+
+.command-row.running span,
+.command-row.pending span {
+  color: var(--warn);
+}
+
+.settings-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.settings-summary div {
+  padding: 16px;
 }
 
 .event-row {
@@ -748,7 +939,7 @@ code {
   }
 
   .nav {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .nav a {
@@ -770,7 +961,12 @@ code {
   }
 
   .split-layout,
-  .detail-grid {
+  .detail-grid,
+  .inline-action-form {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-summary {
     grid-template-columns: 1fr;
   }
 }

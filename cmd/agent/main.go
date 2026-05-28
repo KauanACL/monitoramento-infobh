@@ -66,6 +66,9 @@ func install(logger *slog.Logger, args []string) error {
 	heartbeat := fs.Duration("heartbeat", 30*time.Second, "intervalo de heartbeat")
 	metrics := fs.Duration("metrics", 60*time.Second, "intervalo de metricas")
 	devices := fs.Duration("devices", 5*time.Minute, "intervalo de dispositivos")
+	hardware := fs.Duration("hardware", 6*time.Hour, "intervalo de inventario de hardware")
+	temperatures := fs.Duration("temperatures", 60*time.Second, "intervalo de temperaturas")
+	commands := fs.Duration("commands", 15*time.Second, "intervalo para buscar comandos remotos")
 	_ = fs.Parse(args)
 
 	cfg := agent.DefaultConfig()
@@ -74,6 +77,9 @@ func install(logger *slog.Logger, args []string) error {
 	cfg.HeartbeatEvery = *heartbeat
 	cfg.MetricsEvery = *metrics
 	cfg.DevicesEvery = *devices
+	cfg.HardwareEvery = *hardware
+	cfg.TemperaturesEvery = *temperatures
+	cfg.CommandsEvery = *commands
 	if err := agent.SaveConfig(*configPath, cfg); err != nil {
 		return err
 	}
@@ -145,7 +151,7 @@ func newService(configPath string, logger *slog.Logger) (service.Service, error)
 	cfg := &service.Config{
 		Name:        agent.DefaultServiceName,
 		DisplayName: "InfoBH Monitor Agent",
-		Description: "Coleta metricas de CPU, RAM, discos, internet e dispositivos para o Monitoramento InfoBH.",
+		Description: "Coleta metricas, hardware, temperaturas, dispositivos e comandos para o Monitoramento InfoBH.",
 		Arguments:   []string{"run", "-config", configPath},
 	}
 	return service.New(&program{configPath: configPath, logger: logger}, cfg)
